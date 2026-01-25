@@ -3,16 +3,16 @@ package com.example.eduaceai.controller;
 import com.example.eduaceai.dto.ApiResponse;
 import com.example.eduaceai.dto.req.GenerateQuizRequest;
 import com.example.eduaceai.dto.req.SubmitQuizRequest;
+import com.example.eduaceai.dto.res.QuizHistoryResponse;
 import com.example.eduaceai.entity.Quiz;
 import com.example.eduaceai.entity.QuizResult;
 import com.example.eduaceai.service.IQuizService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/quizzes")
@@ -31,5 +31,17 @@ public class QuizController {
     public ResponseEntity<ApiResponse> submit(@RequestBody SubmitQuizRequest req) {
         QuizResult result = quizService.submitQuiz(req);
         return ResponseEntity.ok(new ApiResponse("Đã chấm điểm xong", result));
+    }
+
+    @GetMapping("/dashboard")
+    public ResponseEntity<ApiResponse> getDashboard() {
+        return ResponseEntity.ok(new ApiResponse("Lấy số liệu thống kê thành công", quizService.getStudentDashboard()));
+    }
+
+    @GetMapping("/history")
+    public ResponseEntity<ApiResponse> getHistory() {
+        List<QuizHistoryResponse> history = quizService.getMyQuizHistory();
+
+        return ResponseEntity.ok(new ApiResponse("Lấy lịch sử làm bài thành công", history));
     }
 }

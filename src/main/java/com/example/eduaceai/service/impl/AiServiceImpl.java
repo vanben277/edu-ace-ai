@@ -1,12 +1,16 @@
 package com.example.eduaceai.service.impl;
 
+import com.example.eduaceai.dto.res.InteractionResponse;
 import com.example.eduaceai.entity.Document;
+import com.example.eduaceai.entity.Interaction;
 import com.example.eduaceai.entity.Question;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
 import com.example.eduaceai.repository.DocumentRepository;
+import com.example.eduaceai.repository.InteractionRepository;
 import com.example.eduaceai.repository.QuizResultRepository;
 import com.example.eduaceai.service.IAiService;
+import com.example.eduaceai.utils.SecurityUtils;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
@@ -21,6 +25,7 @@ public class AiServiceImpl implements IAiService {
     private final GoogleAiGeminiChatModel geminiModel;
     private final DocumentRepository documentRepository;
     private final QuizResultRepository quizResultRepository;
+    private final InteractionRepository interactionRepository;
     @Override
     public String askAi(String message) {
         SystemMessage systemMessage = SystemMessage.from("""
@@ -45,28 +50,44 @@ public class AiServiceImpl implements IAiService {
 
     @Override
     public String askAiOnDocument(Long documentId, String message) {
-        Document doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new BusinessException("Không tìm thấy tài liệu này", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        Document doc = documentRepository.findByIdAndUserStudentCode(documentId, studentCode)
+                .orElseThrow(() -> new BusinessException(
+                        "Bạn không có quyền truy cập tài liệu này hoặc tài liệu không tồn tại",
+                        ErrorCodeConstant.DOCUMENT_NOT_FOUND
+                ));
 
         SystemMessage systemMessage = SystemMessage.from("""
-            BẠN LÀ: EduAce - Trợ lý ôn thi chuyên sâu.
-            NGỮ CẢNH: Bạn đang hỗ trợ sinh viên dựa trên tài liệu có tên là: '""" + doc.getFileName() + """
-            
-            QUY TẮC TRẢ LỜI:
-            1. CHỈ sử dụng thông tin từ nội dung tài liệu được cung cấp bên dưới để trả lời.
-            2. Nếu câu hỏi không có trong tài liệu, hãy lịch sự trả lời: 'Thông tin này không có trong tài liệu tôi đang đọc, nhưng dựa trên kiến thức chung thì...'
-            3. Trình bày ngắn gọn, sử dụng danh sách (bullet points) để dễ học.
-            4. Luôn giữ vai trò là một người hướng dẫn nhiệt tình.
-            
-            NỘI DUNG TÀI LIỆU:
-            ---
-            """ + doc.getContent() + """
-            ---
-            """);
+        BẠN LÀ: EduAce - Trợ lý ôn thi chuyên sâu.
+        NGỮ CẢNH: Bạn đang hỗ trợ sinh viên dựa trên tài liệu có tên là: '""" + doc.getFileName() + """
+        
+        QUY TẮC TRẢ LỜI:
+        1. CHỈ sử dụng thông tin từ nội dung tài liệu được cung cấp bên dưới để trả lời.
+        2. Nếu câu hỏi không có trong tài liệu, hãy lịch sự trả lời: 'Thông tin này không có trong tài liệu tôi đang đọc, nhưng dựa trên kiến thức chung thì...'
+        3. Trình bày ngắn gọn, sử dụng danh sách (bullet points) để dễ học.
+        4. Luôn giữ vai trò là một người hướng dẫn nhiệt tình.
+        
+        NỘI DUNG TÀI LIỆU:
+        ---
+        """ + doc.getContent() + """
+        ---
+        """);
 
         UserMessage userMessage = UserMessage.from("Câu hỏi của sinh viên: " + message);
 
-        return geminiModel.generate(List.of(systemMessage, userMessage)).content().text();
+        String aiResponse = geminiModel.generate(List.of(systemMessage, userMessage)).content().text();
+
+        Interaction interaction = Interaction.builder()
+                .user(doc.getUser())
+                .document(doc)
+                .question(message)
+                .answer(aiResponse)
+                .build();
+
+        interactionRepository.save(interaction);
+
+        return aiResponse;
     }
 
     @Override
@@ -105,31 +126,48 @@ public class AiServiceImpl implements IAiService {
         var quiz = result.getQuiz();
         var questions = quiz.getQuestions();
 
-        StringBuilder mistakeDetails = new StringBuilder();
-        mistakeDetails.append("Kết quả: ").append(result.getCorrectAnswers())
-                .append("/").append(result.getTotalQuestions()).append("\n");
-        mistakeDetails.append("Các câu hỏi sinh viên đã trả lời SAI:\n");
+        StringBuilder summaryContext = new StringBuilder();
+        summaryContext.append(String.format("Kết quả: %d/%d câu đúng (%.2f/10 điểm).\n",
+                result.getCorrectAnswers(), result.getTotalQuestions(), result.getScore()));
 
-        for (Question q : questions) {
-            mistakeDetails.append("- Câu hỏi: ").append(q.getContent()).append("\n");
-            mistakeDetails.append("  Giải thích kiến thức đúng: ").append(q.getExplanation()).append("\n");
+        summaryContext.append("Danh sách các kiến thức có trong đề thi:\n");
+
+        int limit = Math.min(questions.size(), 5);
+        for (int i = 0; i < limit; i++) {
+            Question q = questions.get(i);
+            String shortContent = q.getContent().length() > 100 ? q.getContent().substring(0, 100) : q.getContent();
+            summaryContext.append("- ").append(shortContent).append("\n");
         }
 
         String prompt = """
-        Bạn là một giảng viên đại học tâm huyết. 
-        Dưới đây là thông tin bài tập trắc nghiệm của một sinh viên dựa trên tài liệu '%s'.
-        
-        DỮ LIỆU BÀI LÀM:
+        Bạn là một giảng viên. Hãy nhận xét bài làm trắc nghiệm sau:
+        Tài liệu: %s
         %s
         
-        NHIỆM VỤ CỦA BẠN:
-        1. Nhận xét ngắn gọn về kết quả của sinh viên (động viên nếu điểm cao, khích lệ nếu điểm thấp).
-        2. Phân tích xem sinh viên đang gặp khó khăn ở 'Chủ đề kiến thức' nào (Ví dụ: Đa hình, Đóng gói...).
-        3. Đưa ra 3 lời khuyên cụ thể để sinh viên cải thiện kiến thức này.
-        
-        Yêu cầu trình bày bằng Markdown đẹp mắt, thân thiện.
-        """.formatted(quiz.getTitle(), mistakeDetails.toString());
+        NHIỆM VỤ:
+        1. Nhận xét ngắn gọn điểm số (1 câu).
+        2. Chỉ ra 2 chủ đề kiến thức cần lưu ý dựa trên danh sách trên.
+        3. Đưa ra 3 lời khuyên học tập.
+        Yêu cầu: Trình bày Markdown súc tích, dưới 200 từ.
+        """.formatted(quiz.getTitle(), summaryContext.toString());
 
-        return geminiModel.generate(prompt);
+        try {
+            return geminiModel.generate(prompt);
+        } catch (Exception e) {
+            return "### Kết quả bài thi\n" +
+                    "* Bạn đạt: " + result.getScore() + " điểm.\n" +
+                    "* Hệ thống AI đang bận phân tích chi tiết. Bạn hãy xem lại các câu giải thích trong đề thi nhé!";
+        }
+    }
+    @Override
+    public List<InteractionResponse> getChatHistory(Long documentId) {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        List<Interaction> history = interactionRepository
+                .findByUserStudentCodeAndDocumentIdOrderByCreatedAtAsc(studentCode, documentId);
+
+        return history.stream()
+                .map(i -> new InteractionResponse(i.getId(), i.getQuestion(), i.getAnswer(), i.getCreatedAt()))
+                .toList();
     }
 }

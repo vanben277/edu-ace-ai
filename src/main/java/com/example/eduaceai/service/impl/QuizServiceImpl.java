@@ -1,17 +1,18 @@
 package com.example.eduaceai.service.impl;
 
 import com.example.eduaceai.dto.req.SubmitQuizRequest;
-import com.example.eduaceai.entity.Document;
-import com.example.eduaceai.entity.Question;
-import com.example.eduaceai.entity.Quiz;
-import com.example.eduaceai.entity.QuizResult;
+import com.example.eduaceai.dto.res.DashboardResponse;
+import com.example.eduaceai.dto.res.QuizHistoryResponse;
+import com.example.eduaceai.entity.*;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
 import com.example.eduaceai.repository.DocumentRepository;
 import com.example.eduaceai.repository.QuizRepository;
 import com.example.eduaceai.repository.QuizResultRepository;
+import com.example.eduaceai.repository.UserRepository;
 import com.example.eduaceai.service.IAiService;
 import com.example.eduaceai.service.IQuizService;
+import com.example.eduaceai.utils.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +30,7 @@ public class QuizServiceImpl implements IQuizService {
     private final DocumentRepository documentRepository;
     private final ObjectMapper objectMapper;
     private final QuizResultRepository quizResultRepository;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional
@@ -61,6 +64,10 @@ public class QuizServiceImpl implements IQuizService {
     @Override
     @Transactional
     public QuizResult submitQuiz(SubmitQuizRequest req) {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+        User currentUser = userRepository.findByStudentCode(studentCode)
+                .orElseThrow(() -> new BusinessException("Người dùng không tồn tại", "404005"));
+
         Quiz quiz = quizRepository.findById(req.quizId())
                 .orElseThrow(() -> new BusinessException("Không thấy đề thi", ErrorCodeConstant.NOT_FOUND));
 
@@ -74,15 +81,65 @@ public class QuizServiceImpl implements IQuizService {
             }
         }
 
-        double finalScore = (double) correctCount / questions.size() * 10;
+        double rawScore = (double) correctCount / questions.size() * 10;
+        double finalScore = Math.round(rawScore * 100.0) / 100.0;
 
         QuizResult result = QuizResult.builder()
                 .quiz(quiz)
+                .user(currentUser)
                 .totalQuestions(questions.size())
                 .correctAnswers(correctCount)
                 .score(finalScore)
                 .build();
 
         return quizResultRepository.save(result);
+    }
+
+    @Override
+    public DashboardResponse getStudentDashboard() {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        long totalDocs = documentRepository.countByUserStudentCode(studentCode);
+
+        List<QuizResult> myResults = quizResultRepository.findByUserStudentCode(studentCode);
+
+        long totalQuizzes = myResults.size();
+
+        double avgScore = myResults.stream()
+                .mapToDouble(QuizResult::getScore)
+                .average()
+                .orElse(0.0);
+
+        List<DashboardResponse.ChartData> chartData = myResults.stream()
+                .map(r -> new DashboardResponse.ChartData(
+                        r.getCompletedAt().toString().substring(5, 10),
+                        r.getScore()
+                ))
+                .toList();
+
+        return DashboardResponse.builder()
+                .totalDocuments(totalDocs)
+                .totalQuizzesTaken(totalQuizzes)
+                .averageScore(Math.round(avgScore * 100.0) / 100.0)
+                .progressChart(chartData)
+                .build();
+    }
+
+    @Override
+    public List<QuizHistoryResponse> getMyQuizHistory() {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        List<QuizResult> results = quizResultRepository.findByUserStudentCode(studentCode);
+
+        return results.stream()
+                .map(r -> QuizHistoryResponse.builder()
+                        .id(r.getId())
+                        .quizTitle(r.getQuiz().getTitle())
+                        .score(r.getScore())
+                        .correctAnswers(r.getCorrectAnswers())
+                        .totalQuestions(r.getTotalQuestions())
+                        .completedAt(r.getCompletedAt())
+                        .build())
+                .toList();
     }
 }

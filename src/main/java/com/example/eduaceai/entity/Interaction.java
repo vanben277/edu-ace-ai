@@ -8,30 +8,33 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "quiz_results")
+@Table(name = "interactions")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class QuizResult {
+public class Interaction {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
 
     @ManyToOne
-    @JoinColumn(name = "quiz_id")
-    Quiz quiz;
-
-    Integer totalQuestions;
-    Integer correctAnswers;
-    Double score;
-
-    @CreationTimestamp
-    LocalDateTime completedAt;
-
-    @ManyToOne
     @JoinColumn(name = "user_id")
     @JsonIgnore
-    private User user;
+    User user;
+
+    @ManyToOne
+    @JoinColumn(name = "document_id")
+    @JsonIgnore
+    Document document;
+
+    @Column(columnDefinition = "TEXT")
+    String question;
+
+    @Column(columnDefinition = "LONGTEXT")
+    String answer;
+
+    @CreationTimestamp
+    LocalDateTime createdAt;
 }

@@ -32,4 +32,10 @@ public class AiController {
         String feedback = aiService.getQuizFeedback(resultId);
         return ResponseEntity.ok(new ApiResponse("AI đã phân tích xong bài làm", feedback));
     }
+
+    @GetMapping("/history/{documentId}")
+    public ResponseEntity<ApiResponse> getHistory(@PathVariable Long documentId) {
+        var history = aiService.getChatHistory(documentId);
+        return ResponseEntity.ok(new ApiResponse("Lấy lịch sử chat thành công", history));
+    }
 }
