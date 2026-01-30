@@ -13,14 +13,13 @@ import com.example.eduaceai.repository.UserRepository;
 import com.example.eduaceai.service.IAiService;
 import com.example.eduaceai.service.IQuizService;
 import com.example.eduaceai.utils.SecurityUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
-import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -40,7 +39,8 @@ public class QuizServiceImpl implements IQuizService {
         String cleanJson = rawJson.replaceAll("```json|```", "").trim();
 
         try {
-            List<Question> questions = objectMapper.readValue(cleanJson, new TypeReference<List<Question>>() {});
+            List<Question> questions = objectMapper.readValue(cleanJson, new TypeReference<List<Question>>() {
+            });
 
             Document doc = documentRepository.findById(documentId).get();
             Quiz quiz = Quiz.builder()

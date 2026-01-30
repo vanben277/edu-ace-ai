@@ -7,9 +7,13 @@ import java.util.List;
 
 public interface IAiService {
     String askAi(@Valid String message);
+
     String askAiOnDocument(Long documentId, String message);
+
     String generateQuizJson(Long documentId, int num);
+
     String getQuizFeedback(Long resultId);
+
     List<InteractionResponse> getChatHistory(Long documentId);
 
 }

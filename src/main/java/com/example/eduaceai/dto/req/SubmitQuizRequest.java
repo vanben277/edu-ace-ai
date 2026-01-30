@@ -5,4 +5,5 @@ import java.util.Map;
 public record SubmitQuizRequest(
         Long quizId,
         Map<Long, String> answers
-) {}
+) {
+}

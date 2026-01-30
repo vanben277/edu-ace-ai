@@ -9,4 +9,5 @@ public record ChatOnDocumentRequest(
 
         @NotBlank(message = "Tin nhắn không được để trống")
         String message
-) {}
+) {
+}

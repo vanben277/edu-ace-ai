@@ -7,4 +7,5 @@ public record InteractionResponse(
         String question,
         String answer,
         LocalDateTime createdAt
-) {}
+) {
+}

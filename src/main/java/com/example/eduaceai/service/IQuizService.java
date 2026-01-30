@@ -10,7 +10,10 @@ import java.util.List;
 
 public interface IQuizService {
     Quiz createQuizFromAi(Long documentId, int num);
+
     QuizResult submitQuiz(SubmitQuizRequest req);
+
     DashboardResponse getStudentDashboard();
+
     List<QuizHistoryResponse> getMyQuizHistory();
 }

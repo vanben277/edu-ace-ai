@@ -2,8 +2,9 @@ package com.example.eduaceai.repository.specification;
 
 import com.example.eduaceai.dto.req.UserFilterForm;
 import com.example.eduaceai.entity.User;
-import org.springframework.data.jpa.domain.Specification;
 import jakarta.persistence.criteria.Predicate;
+import org.springframework.data.jpa.domain.Specification;
+
 import java.util.ArrayList;
 import java.util.List;
 

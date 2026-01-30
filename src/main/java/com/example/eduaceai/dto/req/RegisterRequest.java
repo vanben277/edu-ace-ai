@@ -4,4 +4,5 @@ public record RegisterRequest(
         String studentCode,
         String password,
         String fullName
-) {}
+) {
+}

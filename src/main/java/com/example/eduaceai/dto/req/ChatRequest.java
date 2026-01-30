@@ -8,4 +8,5 @@ public record ChatRequest(
         @NotBlank(message = "Tin nhắn không được để trống")
         @Size(max = 5000, message = "Tin nhắn quá dài")
         String message
-) {}
+) {
+}

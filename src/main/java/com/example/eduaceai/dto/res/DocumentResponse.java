@@ -1,6 +1,8 @@
 package com.example.eduaceai.dto.res;
 
-import lombok.*;
+import lombok.Builder;
+import lombok.Data;
+
 import java.time.LocalDateTime;
 
 @Data

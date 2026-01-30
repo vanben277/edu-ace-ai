@@ -5,4 +5,5 @@ public record AuthResponse(
         String studentCode,
         String fullName,
         String role
-) {}
+) {
+}

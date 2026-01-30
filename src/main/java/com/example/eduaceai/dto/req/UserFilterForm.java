@@ -5,4 +5,5 @@ public record UserFilterForm(
         String role,
         String sortBy,
         String sortDir
-) {}
+) {
+}

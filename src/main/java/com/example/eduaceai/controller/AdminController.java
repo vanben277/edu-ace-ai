@@ -2,12 +2,8 @@ package com.example.eduaceai.controller;
 
 import com.example.eduaceai.dto.ApiResponse;
 import com.example.eduaceai.dto.req.UserFilterForm;
-import com.example.eduaceai.repository.UserRepository;
-import com.example.eduaceai.repository.specification.UserSpecification;
 import com.example.eduaceai.service.IAdminService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
