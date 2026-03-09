@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 @Data
 @Builder
 public class DocumentResponse {
+    String ownerCode;
     private Long id;
     private String fileName;
     private String fileType;

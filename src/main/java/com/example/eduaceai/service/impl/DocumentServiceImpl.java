@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -29,7 +30,7 @@ public class DocumentServiceImpl implements IDocumentService {
     @Override
     @Transactional
     public DocumentResponse uploadDocument(MultipartFile file) {
-        if (!file.getContentType().equals("application/pdf")) {
+        if (!Objects.equals(file.getContentType(), "application/pdf")) {
             throw new BusinessException("Chỉ hỗ trợ định dạng file PDF", ErrorCodeConstant.INVALID_FILE_TYPE);
         }
 
@@ -95,8 +96,23 @@ public class DocumentServiceImpl implements IDocumentService {
     public Document getById(Long id) {
         String studentCode = SecurityUtils.getCurrentStudentCode();
 
-        // CHỐT CHẶN BẢO MẬT: Phải đúng ID và đúng chủ sở hữu
         return documentRepository.findByIdAndUserStudentCode(id, studentCode)
                 .orElseThrow(() -> new BusinessException("Bạn không có quyền truy cập tài liệu này hoặc tài liệu không tồn tại", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+    }
+
+    @Override
+    public List<DocumentResponse> adminGetAllDocuments() {
+        List<Document> allDocs = documentRepository.findAll();
+
+        return allDocs.stream()
+                .map(doc -> DocumentResponse.builder()
+                        .id(doc.getId())
+                        .fileName(doc.getFileName())
+                        .fileType(doc.getFileType())
+                        .fileSize(doc.getFileSize())
+                        .ownerCode(doc.getUser() != null ? doc.getUser().getStudentCode() : "N/A")
+                        .createdAt(doc.getCreatedAt())
+                        .build())
+                .toList();
     }
 }
