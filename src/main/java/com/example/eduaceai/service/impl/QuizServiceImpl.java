@@ -2,6 +2,7 @@ package com.example.eduaceai.service.impl;
 
 import com.example.eduaceai.dto.req.SubmitQuizRequest;
 import com.example.eduaceai.dto.res.DashboardResponse;
+import com.example.eduaceai.dto.res.QuizAiResponse;
 import com.example.eduaceai.dto.res.QuizHistoryResponse;
 import com.example.eduaceai.entity.*;
 import com.example.eduaceai.exception.BusinessException;
@@ -12,17 +13,19 @@ import com.example.eduaceai.repository.QuizResultRepository;
 import com.example.eduaceai.repository.UserRepository;
 import com.example.eduaceai.service.IAiService;
 import com.example.eduaceai.service.IQuizService;
+import com.example.eduaceai.service.ai.QuizAiService;
 import com.example.eduaceai.utils.SecurityUtils;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class QuizServiceImpl implements IQuizService {
     private final IAiService aiService;
     private final QuizRepository quizRepository;
@@ -30,34 +33,49 @@ public class QuizServiceImpl implements IQuizService {
     private final ObjectMapper objectMapper;
     private final QuizResultRepository quizResultRepository;
     private final UserRepository userRepository;
+    private final QuizAiService quizAiService;
 
     @Override
     @Transactional
     public Quiz createQuizFromAi(Long documentId, int num) {
-        String rawJson = aiService.generateQuizJson(documentId, num);
-
-        String cleanJson = rawJson.replaceAll("```json|```", "").trim();
+        Document doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new BusinessException("Không tìm thấy tài liệu", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
 
         try {
-            List<Question> questions = objectMapper.readValue(cleanJson, new TypeReference<List<Question>>() {
-            });
+            // 1. Nhận về đối tượng Wrapper
+            QuizAiResponse aiResponse = quizAiService.generateQuiz(doc.getContent(), num);
 
-            Document doc = documentRepository.findById(documentId).get();
+            if (aiResponse == null || aiResponse.getQuestions() == null) {
+                throw new BusinessException("AI không thể tạo câu hỏi", ErrorCodeConstant.AI_SERVICE_ERROR);
+            }
+
+            // 2. Tạo Quiz Entity
             Quiz quiz = Quiz.builder()
                     .title("Bài ôn tập: " + doc.getFileName())
                     .document(doc)
                     .build();
 
-            // Gán quan hệ
-            for (Question q : questions) {
-                q.setQuiz(quiz);
-            }
+            // 3. Map từ List trong Wrapper sang Entity
+            List<Question> questions = aiResponse.getQuestions().stream()
+                    .map(res -> Question.builder()
+                            .content(res.getContent())
+                            .optionA(res.getOptionA())
+                            .optionB(res.getOptionB())
+                            .optionC(res.getOptionC())
+                            .optionD(res.getOptionD())
+                            .correctAnswer(res.getCorrectAnswer())
+                            .explanation(res.getExplanation())
+                            .quiz(quiz)
+                            .build())
+                    .toList();
+
             quiz.setQuestions(questions);
 
             return quizRepository.save(quiz);
 
         } catch (Exception e) {
-            throw new BusinessException("AI trả về dữ liệu không đúng định dạng JSON", ErrorCodeConstant.AI_SERVICE_ERROR);
+            log.error("Lỗi chi tiết: ", e);
+            throw new BusinessException("Hệ thống AI không thể đóng gói dữ liệu. Thử lại sau!", ErrorCodeConstant.AI_SERVICE_ERROR);
         }
     }
 

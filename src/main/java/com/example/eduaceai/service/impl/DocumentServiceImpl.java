@@ -2,30 +2,40 @@ package com.example.eduaceai.service.impl;
 
 import com.example.eduaceai.dto.res.DocumentResponse;
 import com.example.eduaceai.entity.Document;
+import com.example.eduaceai.entity.DocumentChunk;
 import com.example.eduaceai.entity.User;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
 import com.example.eduaceai.exception.NotFoundException;
+import com.example.eduaceai.repository.DocumentChunkRepository;
 import com.example.eduaceai.repository.DocumentRepository;
 import com.example.eduaceai.repository.UserRepository;
 import com.example.eduaceai.service.IDocumentService;
 import com.example.eduaceai.utils.SecurityUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DocumentServiceImpl implements IDocumentService {
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
+    private final DocumentChunkRepository chunkRepository;
+    private final EmbeddingModel embeddingModel;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -60,6 +70,24 @@ public class DocumentServiceImpl implements IDocumentService {
 
             Document savedDoc = documentRepository.save(document);
 
+            // Băm nhỏ và lưu Vector
+            List<String> chunks = splitText(extractedText, 800); // 800 ký tự mỗi đoạn
+            for (String text : chunks) {
+                // Tạo Vector từ đoạn văn
+                float[] vector = embeddingModel.embed(text).content().vector();
+
+                try {
+                    DocumentChunk chunk = DocumentChunk.builder()
+                            .document(savedDoc)
+                            .content(text)
+                            .embeddingJson(objectMapper.writeValueAsString(vector))
+                            .build();
+                    chunkRepository.save(chunk);
+                } catch (Exception e) {
+                    log.error("Lỗi lưu chunk: ", e);
+                }
+            }
+
             return DocumentResponse.builder()
                     .id(savedDoc.getId())
                     .fileName(savedDoc.getFileName())
@@ -73,14 +101,22 @@ public class DocumentServiceImpl implements IDocumentService {
         }
     }
 
+    private List<String> splitText(String text, int size) {
+        List<String> chunks = new ArrayList<>();
+        int step = size - 100;
+        for (int i = 0; i < text.length(); i += step) {
+            chunks.add(text.substring(i, Math.min(text.length(), i + size)));
+            if (i + size >= text.length()) break;
+        }
+        return chunks;
+    }
+
     @Override
     public List<DocumentResponse> getAllDocuments() {
         String studentCode = SecurityUtils.getCurrentStudentCode();
 
-        // 1. Lấy danh sách Entity
         List<Document> documents = documentRepository.findByUserStudentCode(studentCode);
 
-        // 2. Chuyển sang DTO (Ngắt vòng lặp JSON)
         return documents.stream()
                 .map(doc -> DocumentResponse.builder()
                         .id(doc.getId())

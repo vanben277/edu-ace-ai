@@ -1,6 +1,10 @@
 package com.example.eduaceai.config;
 
+import com.example.eduaceai.service.ai.QuizAiService;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.embedding.onnx.allminilml6v2q.AllMiniLmL6V2QuantizedEmbeddingModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
+import dev.langchain4j.service.AiServices;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,5 +28,15 @@ public class AiConfig {
                 .timeout(Duration.ofSeconds(180))
                 .logRequestsAndResponses(true)
                 .build();
+    }
+
+    @Bean
+    public QuizAiService quizAiService(GoogleAiGeminiChatModel model) {
+        return AiServices.create(QuizAiService.class, model);
+    }
+
+    @Bean
+    public EmbeddingModel embeddingModel() {
+        return new AllMiniLmL6V2QuantizedEmbeddingModel();
     }
 }

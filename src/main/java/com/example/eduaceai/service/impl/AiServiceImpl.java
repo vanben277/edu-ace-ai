@@ -2,30 +2,42 @@ package com.example.eduaceai.service.impl;
 
 import com.example.eduaceai.dto.res.InteractionResponse;
 import com.example.eduaceai.entity.Document;
+import com.example.eduaceai.entity.DocumentChunk;
 import com.example.eduaceai.entity.Interaction;
 import com.example.eduaceai.entity.Question;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
+import com.example.eduaceai.repository.DocumentChunkRepository;
 import com.example.eduaceai.repository.DocumentRepository;
 import com.example.eduaceai.repository.InteractionRepository;
 import com.example.eduaceai.repository.QuizResultRepository;
 import com.example.eduaceai.service.IAiService;
 import com.example.eduaceai.utils.SecurityUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
+import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AiServiceImpl implements IAiService {
     private final GoogleAiGeminiChatModel geminiModel;
     private final DocumentRepository documentRepository;
     private final QuizResultRepository quizResultRepository;
     private final InteractionRepository interactionRepository;
+    private final EmbeddingModel embeddingModel;
+    private final DocumentChunkRepository documentChunkRepository;
+    private final ObjectMapper objectMapper;
 
     @Override
     public String askAi(String message) {
@@ -52,44 +64,67 @@ public class AiServiceImpl implements IAiService {
     @Override
     public String askAiOnDocument(Long documentId, String message) {
         String studentCode = SecurityUtils.getCurrentStudentCode();
-
         Document doc = documentRepository.findByIdAndUserStudentCode(documentId, studentCode)
-                .orElseThrow(() -> new BusinessException(
-                        "Bạn không có quyền truy cập tài liệu này hoặc tài liệu không tồn tại",
-                        ErrorCodeConstant.DOCUMENT_NOT_FOUND
-                ));
+                .orElseThrow(() -> new BusinessException("Tài liệu không tồn tại hoặc bạn không có quyền", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+
+        List<DocumentChunk> dbChunks = documentChunkRepository.findByDocumentId(documentId);
+        if (dbChunks.isEmpty()) {
+            throw new BusinessException("Tài liệu chưa được xử lý dữ liệu AI. Vui lòng tải lại!", ErrorCodeConstant.BAD_REQUEST);
+        }
+
+        InMemoryEmbeddingStore<DocumentChunk> embeddingStore = new InMemoryEmbeddingStore<>();
+
+        for (DocumentChunk dbChunk : dbChunks) {
+            try {
+                // Chuyển chuỗi JSON embedding trong DB ngược lại thành mảng float[]
+                float[] vector = objectMapper.readValue(dbChunk.getEmbeddingJson(), float[].class);
+                Embedding embedding = Embedding.from(vector);
+
+                embeddingStore.add(embedding, dbChunk);
+            } catch (Exception e) {
+                log.error("Lỗi parse vector cho chunk {}: {}", dbChunk.getId(), e.getMessage());
+            }
+        }
+
+        Embedding queryEmbedding = embeddingModel.embed(message).content();
+        var matches = embeddingStore.findRelevant(queryEmbedding, 3, 0.6); // Lấy tối đa 3 đoạn, độ tương đồng trên 60%
+
+        String relevantContext = matches.stream()
+                .map(match -> match.embedded().getContent())
+                .collect(Collectors.joining("\n---\n"));
+
+        if (relevantContext.isEmpty()) {
+            relevantContext = "Không tìm thấy đoạn văn nào trong tài liệu trực tiếp trả lời câu hỏi này. Hãy trả lời dựa trên kiến thức chung và nêu rõ điều đó.";
+        }
 
         SystemMessage systemMessage = SystemMessage.from("""
-                BẠN LÀ: EduAce - Trợ lý ôn thi chuyên sâu.
-                NGỮ CẢNH: Bạn đang hỗ trợ sinh viên dựa trên tài liệu có tên là: '""" + doc.getFileName() + """
+                BẠN LÀ: EduAce - Trợ lý ôn thi chuyên nghiệp.
+                NHIỆM VỤ: Trả lời câu hỏi dựa trên các đoạn văn bản trích dẫn từ tài liệu: '%s' dưới đây.
                 
-                QUY TẮC TRẢ LỜI:
-                1. CHỈ sử dụng thông tin từ nội dung tài liệu được cung cấp bên dưới để trả lời.
-                2. Nếu câu hỏi không có trong tài liệu, hãy lịch sự trả lời: 'Thông tin này không có trong tài liệu tôi đang đọc, nhưng dựa trên kiến thức chung thì...'
-                3. Trình bày ngắn gọn, sử dụng danh sách (bullet points) để dễ học.
-                4. Luôn giữ vai trò là một người hướng dẫn nhiệt tình.
+                NGỮ CẢNH TRÍCH DẪN:
+                ---
+                %s
+                ---
                 
-                NỘI DUNG TÀI LIỆU:
-                ---
-                """ + doc.getContent() + """
-                ---
-                """);
+                QUY TẮC:
+                - Nếu thông tin có trong ngữ cảnh, hãy tóm tắt và trình bày rõ ràng.
+                - Nếu không có, hãy trả lời lịch sự: 'Thông tin này không có rõ trong tài liệu, nhưng theo kiến thức học thuật thì...'
+                """.formatted(doc.getFileName(), relevantContext));
 
         UserMessage userMessage = UserMessage.from("Câu hỏi của sinh viên: " + message);
 
         String aiResponse = geminiModel.generate(List.of(systemMessage, userMessage)).content().text();
 
-        Interaction interaction = Interaction.builder()
+        interactionRepository.save(Interaction.builder()
                 .user(doc.getUser())
                 .document(doc)
                 .question(message)
                 .answer(aiResponse)
-                .build();
-
-        interactionRepository.save(interaction);
+                .build());
 
         return aiResponse;
     }
+
 
     @Override
     public String generateQuizJson(Long documentId, int num) {
