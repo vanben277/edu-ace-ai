@@ -1,4 +1,4 @@
-FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
+FROM maven:3.9.6-eclipse-temurin-21 AS build
 WORKDIR /app
 
 COPY pom.xml .
@@ -6,8 +6,12 @@ COPY src ./src
 
 RUN mvn clean package -DskipTests
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/target/*.jar app.jar
 
