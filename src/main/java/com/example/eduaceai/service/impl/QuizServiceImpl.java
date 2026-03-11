@@ -1,9 +1,7 @@
 package com.example.eduaceai.service.impl;
 
 import com.example.eduaceai.dto.req.SubmitQuizRequest;
-import com.example.eduaceai.dto.res.DashboardResponse;
-import com.example.eduaceai.dto.res.QuizAiResponse;
-import com.example.eduaceai.dto.res.QuizHistoryResponse;
+import com.example.eduaceai.dto.res.*;
 import com.example.eduaceai.entity.*;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
@@ -39,7 +37,7 @@ public class QuizServiceImpl implements IQuizService {
 
     @Override
     @Transactional
-    public Quiz createQuizFromAi(Long documentId, int num) {
+    public QuizResponse createQuizFromAi(Long documentId, int num) {
         Document doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new BusinessException("Không tìm thấy tài liệu", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
 
@@ -73,7 +71,22 @@ public class QuizServiceImpl implements IQuizService {
 
             quiz.setQuestions(questions);
 
-            return quizRepository.save(quiz);
+            Quiz savedQuiz = quizRepository.save(quiz);
+
+            List<QuestionResponse> questionResponses = savedQuiz.getQuestions().stream()
+                    .map(q -> new QuestionResponse(
+                            q.getId(), q.getContent(), q.getOptionA(),
+                            q.getOptionB(), q.getOptionC(), q.getOptionD(),
+                            q.getCorrectAnswer(), q.getExplanation()))
+                    .toList();
+
+            return new QuizResponse(
+                    savedQuiz.getId(),
+                    savedQuiz.getTitle(),
+                    savedQuiz.getDocument().getId(),
+                    questionResponses,
+                    savedQuiz.getCreatedAt()
+            );
 
         } catch (Exception e) {
             log.error("Lỗi chi tiết: ", e);

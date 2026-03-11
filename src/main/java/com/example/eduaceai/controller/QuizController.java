@@ -4,6 +4,7 @@ import com.example.eduaceai.dto.ApiResponse;
 import com.example.eduaceai.dto.req.GenerateQuizRequest;
 import com.example.eduaceai.dto.req.SubmitQuizRequest;
 import com.example.eduaceai.dto.res.QuizHistoryResponse;
+import com.example.eduaceai.dto.res.QuizResponse;
 import com.example.eduaceai.entity.Quiz;
 import com.example.eduaceai.entity.QuizResult;
 import com.example.eduaceai.service.IQuizService;
@@ -22,9 +23,9 @@ public class QuizController {
 
     @PostMapping("/generate")
     public ResponseEntity<ApiResponse> generateQuiz(@Valid @RequestBody GenerateQuizRequest req) {
-        Quiz quiz = quizService.createQuizFromAi(req.documentId(), req.numberOfQuestions());
+        QuizResponse quizRes = quizService.createQuizFromAi(req.documentId(), req.numberOfQuestions());
 
-        return ResponseEntity.ok(new ApiResponse("Đã tạo bộ đề thi thành công từ AI", quiz));
+        return ResponseEntity.ok(new ApiResponse("Đã tạo bộ đề thi thành công từ AI", quizRes));
     }
 
     @PostMapping("/submit")
