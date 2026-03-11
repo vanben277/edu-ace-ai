@@ -96,7 +96,7 @@ public class QuizServiceImpl implements IQuizService {
 
     @Override
     @Transactional
-    public QuizResult submitQuiz(SubmitQuizRequest req) {
+    public QuizResultResponse submitQuiz(SubmitQuizRequest req) {
         String studentCode = SecurityUtils.getCurrentStudentCode();
         User currentUser = userRepository.findByStudentCode(studentCode)
                 .orElseThrow(() -> new BusinessException("Người dùng không tồn tại", "404005"));
@@ -136,7 +136,28 @@ public class QuizServiceImpl implements IQuizService {
         }
         result.setUserAnswers(userAnswers);
 
-        return quizResultRepository.save(result);
+        QuizResult savedResult = quizResultRepository.save(result);
+
+        List<UserAnswerResponse> answerRes = savedResult.getUserAnswers().stream()
+                .map(ua -> new UserAnswerResponse(
+                        ua.getQuestion().getId(),
+                        ua.getQuestion().getContent(),
+                        ua.getSelectedOption(),
+                        ua.getQuestion().getCorrectAnswer(),
+                        ua.isCorrect(),
+                        ua.getQuestion().getExplanation()
+                ))
+                .toList();
+
+        return new QuizResultResponse(
+                savedResult.getId(),
+                savedResult.getQuiz().getTitle(),
+                savedResult.getTotalQuestions(),
+                savedResult.getCorrectAnswers(),
+                savedResult.getScore(),
+                savedResult.getCompletedAt(),
+                answerRes
+        );
     }
 
     @Override

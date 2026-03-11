@@ -5,8 +5,7 @@ import com.example.eduaceai.dto.req.GenerateQuizRequest;
 import com.example.eduaceai.dto.req.SubmitQuizRequest;
 import com.example.eduaceai.dto.res.QuizHistoryResponse;
 import com.example.eduaceai.dto.res.QuizResponse;
-import com.example.eduaceai.entity.Quiz;
-import com.example.eduaceai.entity.QuizResult;
+import com.example.eduaceai.dto.res.QuizResultResponse;
 import com.example.eduaceai.service.IQuizService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +29,7 @@ public class QuizController {
 
     @PostMapping("/submit")
     public ResponseEntity<ApiResponse> submit(@RequestBody SubmitQuizRequest req) {
-        QuizResult result = quizService.submitQuiz(req);
+        QuizResultResponse result = quizService.submitQuiz(req);
         return ResponseEntity.ok(new ApiResponse("Đã chấm điểm xong", result));
     }
 

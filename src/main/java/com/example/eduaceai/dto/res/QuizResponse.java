@@ -9,4 +9,5 @@ public record QuizResponse(
         Long documentId,
         List<QuestionResponse> questions,
         LocalDateTime createdAt
-) {}
+) {
+}

@@ -9,4 +9,5 @@ public record QuestionResponse(
         String optionD,
         String correctAnswer,
         String explanation
-) {}
+) {
+}

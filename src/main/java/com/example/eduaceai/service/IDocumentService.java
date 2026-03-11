@@ -1,7 +1,6 @@
 package com.example.eduaceai.service;
 
 import com.example.eduaceai.dto.res.DocumentResponse;
-import com.example.eduaceai.entity.Document;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
