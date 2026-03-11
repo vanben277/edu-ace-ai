@@ -130,11 +130,29 @@ public class DocumentServiceImpl implements IDocumentService {
     }
 
     @Override
-    public Document getById(Long id) {
+    public DocumentResponse getById(Long id) {
         String studentCode = SecurityUtils.getCurrentStudentCode();
 
-        return documentRepository.findByIdAndUserStudentCode(id, studentCode)
-                .orElseThrow(() -> new BusinessException("Bạn không có quyền truy cập tài liệu này hoặc tài liệu không tồn tại", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+        Document doc = documentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException("Tài liệu không tồn tại", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
+                .stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isAdmin && !doc.getUser().getStudentCode().equals(studentCode)) {
+            throw new BusinessException("Bạn không có quyền xem tài liệu này", "403001");
+        }
+
+        return DocumentResponse.builder()
+                .id(doc.getId())
+                .fileName(doc.getFileName())
+                .fileType(doc.getFileType())
+                .fileSize(doc.getFileSize())
+                .content(doc.getContent())
+                .ownerCode(doc.getUser().getStudentCode())
+                .createdAt(doc.getCreatedAt())
+                .build();
     }
 
     @Override

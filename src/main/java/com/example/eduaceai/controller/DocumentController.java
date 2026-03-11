@@ -31,7 +31,7 @@ public class DocumentController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse> show(@PathVariable Long id) {
-        var doc = documentService.getById(id);
+        DocumentResponse doc = documentService.getById(id);
         return ResponseEntity.ok(new ApiResponse("Lấy chi tiết tài liệu thành công", doc));
     }
 

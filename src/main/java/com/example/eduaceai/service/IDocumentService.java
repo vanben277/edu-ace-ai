@@ -11,7 +11,7 @@ public interface IDocumentService {
 
     List<DocumentResponse> getAllDocuments();
 
-    Document getById(Long id);
+    DocumentResponse getById(Long id);
 
     Object adminGetAllDocuments();
 
