@@ -19,7 +19,7 @@ public interface IQuizService {
 
     List<QuizHistoryResponse> getMyQuizHistory();
 
-    QuizResult getResultDetail(Long resultId);
+    QuizResultResponse getResultDetail(Long resultId);
 
-    Quiz getQuizDetail(Long quizId);
+    QuizResponse getQuizDetail(Long quizId);
 }

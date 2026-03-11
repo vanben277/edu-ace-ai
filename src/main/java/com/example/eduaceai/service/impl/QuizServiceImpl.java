@@ -42,7 +42,7 @@ public class QuizServiceImpl implements IQuizService {
                 .orElseThrow(() -> new BusinessException("Không tìm thấy tài liệu", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
 
         try {
-            // 1. Nhận về đối tượng Wrapper
+            // 1. Nhận về đối tượng Wrapper từ AI
             QuizAiResponse aiResponse = quizAiService.generateQuiz(doc.getContent(), num);
 
             if (aiResponse == null || aiResponse.getQuestions() == null) {
@@ -55,7 +55,7 @@ public class QuizServiceImpl implements IQuizService {
                     .document(doc)
                     .build();
 
-            // 3. Map từ List trong Wrapper sang Entity
+            // 3. Map từ DTO AI sang Entity Question
             List<Question> questions = aiResponse.getQuestions().stream()
                     .map(res -> Question.builder()
                             .content(res.getContent())
@@ -71,26 +71,13 @@ public class QuizServiceImpl implements IQuizService {
 
             quiz.setQuestions(questions);
 
+            // 4. Lưu và trả về DTO thông qua hàm map dùng chung
             Quiz savedQuiz = quizRepository.save(quiz);
-
-            List<QuestionResponse> questionResponses = savedQuiz.getQuestions().stream()
-                    .map(q -> new QuestionResponse(
-                            q.getId(), q.getContent(), q.getOptionA(),
-                            q.getOptionB(), q.getOptionC(), q.getOptionD(),
-                            q.getCorrectAnswer(), q.getExplanation()))
-                    .toList();
-
-            return new QuizResponse(
-                    savedQuiz.getId(),
-                    savedQuiz.getTitle(),
-                    savedQuiz.getDocument().getId(),
-                    questionResponses,
-                    savedQuiz.getCreatedAt()
-            );
+            return mapToQuizResponse(savedQuiz);
 
         } catch (Exception e) {
-            log.error("Lỗi chi tiết: ", e);
-            throw new BusinessException("Hệ thống AI không thể đóng gói dữ liệu. Thử lại sau!", ErrorCodeConstant.AI_SERVICE_ERROR);
+            log.error("Lỗi tạo Quiz: ", e);
+            throw new BusinessException("Hệ thống AI không thể tạo đề thi. Thử lại sau!", ErrorCodeConstant.AI_SERVICE_ERROR);
         }
     }
 
@@ -108,6 +95,7 @@ public class QuizServiceImpl implements IQuizService {
         List<UserAnswer> userAnswers = new ArrayList<>();
         int correctCount = 0;
 
+        // Chấm điểm từng câu
         for (Question q : questions) {
             String studentAnswer = req.answers().get(q.getId());
             boolean isCorrect = studentAnswer != null && studentAnswer.equalsIgnoreCase(q.getCorrectAnswer());
@@ -131,45 +119,48 @@ public class QuizServiceImpl implements IQuizService {
                 .score(Math.round(rawScore * 100.0) / 100.0)
                 .build();
 
+        // Thiết lập quan hệ 2 chiều để Cascade lưu cả userAnswers
         for (UserAnswer ua : userAnswers) {
             ua.setQuizResult(result);
         }
         result.setUserAnswers(userAnswers);
 
         QuizResult savedResult = quizResultRepository.save(result);
+        return mapToQuizResultResponse(savedResult); // Dùng lại hàm map
+    }
 
-        List<UserAnswerResponse> answerRes = savedResult.getUserAnswers().stream()
-                .map(ua -> new UserAnswerResponse(
-                        ua.getQuestion().getId(),
-                        ua.getQuestion().getContent(),
-                        ua.getSelectedOption(),
-                        ua.getQuestion().getCorrectAnswer(),
-                        ua.isCorrect(),
-                        ua.getQuestion().getExplanation()
-                ))
-                .toList();
+    @Override
+    public QuizResultResponse getResultDetail(Long resultId) {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+        QuizResult result = quizResultRepository.findById(resultId)
+                .orElseThrow(() -> new BusinessException("Không tìm thấy kết quả", "404000"));
 
-        return new QuizResultResponse(
-                savedResult.getId(),
-                savedResult.getQuiz().getTitle(),
-                savedResult.getTotalQuestions(),
-                savedResult.getCorrectAnswers(),
-                savedResult.getScore(),
-                savedResult.getCompletedAt(),
-                answerRes
-        );
+        // Kiểm tra quyền (Admin hoặc chính chủ)
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
+                .stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isAdmin && !result.getUser().getStudentCode().equals(studentCode)) {
+            throw new BusinessException("Bạn không có quyền xem kết quả này", "403001");
+        }
+
+        return mapToQuizResultResponse(result); // Dùng lại hàm map
+    }
+
+    @Override
+    public QuizResponse getQuizDetail(Long quizId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new BusinessException("Không tìm thấy bộ đề", "404000"));
+
+        return mapToQuizResponse(quiz); // Dùng lại hàm map
     }
 
     @Override
     public DashboardResponse getStudentDashboard() {
         String studentCode = SecurityUtils.getCurrentStudentCode();
-
         long totalDocs = documentRepository.countByUserStudentCode(studentCode);
-
         List<QuizResult> myResults = quizResultRepository.findByUserStudentCode(studentCode);
-
         long totalQuizzes = myResults.size();
-
         double avgScore = myResults.stream()
                 .mapToDouble(QuizResult::getScore)
                 .average()
@@ -193,7 +184,6 @@ public class QuizServiceImpl implements IQuizService {
     @Override
     public List<QuizHistoryResponse> getMyQuizHistory() {
         String studentCode = SecurityUtils.getCurrentStudentCode();
-
         List<QuizResult> results = quizResultRepository.findByUserStudentCode(studentCode);
 
         return results.stream()
@@ -208,28 +198,43 @@ public class QuizServiceImpl implements IQuizService {
                 .toList();
     }
 
+    private QuizResponse mapToQuizResponse(Quiz quiz) {
+        List<QuestionResponse> questions = quiz.getQuestions().stream()
+                .map(q -> new QuestionResponse(
+                        q.getId(), q.getContent(), q.getOptionA(),
+                        q.getOptionB(), q.getOptionC(), q.getOptionD(),
+                        q.getCorrectAnswer(), q.getExplanation()))
+                .toList();
 
-    @Override
-    public QuizResult getResultDetail(Long resultId) {
-        String studentCode = SecurityUtils.getCurrentStudentCode();
-
-        QuizResult result = quizResultRepository.findById(resultId)
-                .orElseThrow(() -> new BusinessException("Không tìm thấy kết quả", "404000"));
-
-        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
-                .stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-
-        if (!isAdmin && !result.getUser().getStudentCode().equals(studentCode)) {
-            throw new BusinessException("Bạn không có quyền xem kết quả này", "403001");
-        }
-
-        return result;
+        return new QuizResponse(
+                quiz.getId(),
+                quiz.getTitle(),
+                quiz.getDocument().getId(),
+                questions,
+                quiz.getCreatedAt()
+        );
     }
 
-    @Override
-    public Quiz getQuizDetail(Long quizId) {
-        return quizRepository.findById(quizId)
-                .orElseThrow(() -> new BusinessException("Không tìm thấy bộ đề", "404000"));
+    private QuizResultResponse mapToQuizResultResponse(QuizResult result) {
+        List<UserAnswerResponse> answers = result.getUserAnswers().stream()
+                .map(ua -> new UserAnswerResponse(
+                        ua.getQuestion().getId(),
+                        ua.getQuestion().getContent(),
+                        ua.getSelectedOption(),
+                        ua.getQuestion().getCorrectAnswer(),
+                        ua.isCorrect(),
+                        ua.getQuestion().getExplanation()
+                ))
+                .toList();
+
+        return new QuizResultResponse(
+                result.getId(),
+                result.getQuiz().getTitle(),
+                result.getTotalQuestions(),
+                result.getCorrectAnswers(),
+                result.getScore(),
+                result.getCompletedAt(),
+                answers
+        );
     }
 }
