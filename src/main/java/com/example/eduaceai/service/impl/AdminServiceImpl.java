@@ -1,6 +1,7 @@
 package com.example.eduaceai.service.impl;
 
 import com.example.eduaceai.dto.req.UserFilterForm;
+import com.example.eduaceai.dto.res.UserResponse;
 import com.example.eduaceai.entity.User;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.repository.UserRepository;
@@ -21,7 +22,7 @@ public class AdminServiceImpl implements IAdminService {
     private final UserRepository userRepository;
 
     @Override
-    public List<User> getAllUsers(UserFilterForm form) {
+    public List<UserResponse> getAllUsers(UserFilterForm form) {
         String sortBy = (form.sortBy() != null && !form.sortBy().isEmpty()) ? form.sortBy() : "createdAt";
         Sort sort = (form.sortDir() != null && form.sortDir().equalsIgnoreCase("asc"))
                 ? Sort.by(sortBy).ascending()
@@ -29,7 +30,18 @@ public class AdminServiceImpl implements IAdminService {
 
         var spec = UserSpecification.filterUsers(form);
 
-        return userRepository.findAll(spec, sort);
+        List<User> users = userRepository.findAll(spec, sort);
+
+        return users.stream()
+                .map(user -> new UserResponse(
+                        user.getId(),
+                        user.getStudentCode(),
+                        user.getFullName(),
+                        user.getRole().name(),
+                        user.isEnabled(),
+                        user.getCreatedAt()
+                ))
+                .toList();
     }
 
     @Override

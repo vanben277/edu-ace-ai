@@ -32,6 +32,7 @@ public class AuthServiceImpl implements IAuthService {
                 .password(passwordEncoder.encode(req.password()))
                 .fullName(req.fullName())
                 .role(User.Role.STUDENT)
+                .enabled(true)
                 .build();
 
         return userRepository.save(user);

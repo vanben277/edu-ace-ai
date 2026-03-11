@@ -2,12 +2,15 @@ package com.example.eduaceai.controller;
 
 import com.example.eduaceai.dto.ApiResponse;
 import com.example.eduaceai.dto.req.UserFilterForm;
+import com.example.eduaceai.dto.res.UserResponse;
 import com.example.eduaceai.service.IAdminService;
 import com.example.eduaceai.service.IDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -20,7 +23,7 @@ public class AdminController {
     @GetMapping("/users")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse> getUsers(UserFilterForm form) {
-        var users = adminService.getAllUsers(form);
+        List<UserResponse> users = adminService.getAllUsers(form);
 
         return ResponseEntity.ok(new ApiResponse("Lấy danh sách người dùng thành công", users));
     }
