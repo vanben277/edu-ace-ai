@@ -19,8 +19,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -89,26 +91,37 @@ public class QuizServiceImpl implements IQuizService {
         Quiz quiz = quizRepository.findById(req.quizId())
                 .orElseThrow(() -> new BusinessException("Không thấy đề thi", ErrorCodeConstant.NOT_FOUND));
 
-        int correctCount = 0;
         List<Question> questions = quiz.getQuestions();
+        List<UserAnswer> userAnswers = new ArrayList<>();
+        int correctCount = 0;
 
         for (Question q : questions) {
             String studentAnswer = req.answers().get(q.getId());
-            if (studentAnswer != null && studentAnswer.equalsIgnoreCase(q.getCorrectAnswer())) {
-                correctCount++;
-            }
+            boolean isCorrect = studentAnswer != null && studentAnswer.equalsIgnoreCase(q.getCorrectAnswer());
+
+            if (isCorrect) correctCount++;
+
+            userAnswers.add(UserAnswer.builder()
+                    .question(q)
+                    .selectedOption(studentAnswer)
+                    .isCorrect(isCorrect)
+                    .build());
         }
 
         double rawScore = (double) correctCount / questions.size() * 10;
-        double finalScore = Math.round(rawScore * 100.0) / 100.0;
 
         QuizResult result = QuizResult.builder()
                 .quiz(quiz)
                 .user(currentUser)
                 .totalQuestions(questions.size())
                 .correctAnswers(correctCount)
-                .score(finalScore)
+                .score(Math.round(rawScore * 100.0) / 100.0)
                 .build();
+
+        for (UserAnswer ua : userAnswers) {
+            ua.setQuizResult(result);
+        }
+        result.setUserAnswers(userAnswers);
 
         return quizResultRepository.save(result);
     }
@@ -159,5 +172,30 @@ public class QuizServiceImpl implements IQuizService {
                         .completedAt(r.getCompletedAt())
                         .build())
                 .toList();
+    }
+
+
+    @Override
+    public QuizResult getResultDetail(Long resultId) {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        QuizResult result = quizResultRepository.findById(resultId)
+                .orElseThrow(() -> new BusinessException("Không tìm thấy kết quả", "404000"));
+
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
+                .stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isAdmin && !result.getUser().getStudentCode().equals(studentCode)) {
+            throw new BusinessException("Bạn không có quyền xem kết quả này", "403001");
+        }
+
+        return result;
+    }
+
+    @Override
+    public Quiz getQuizDetail(Long quizId) {
+        return quizRepository.findById(quizId)
+                .orElseThrow(() -> new BusinessException("Không tìm thấy bộ đề", "404000"));
     }
 }

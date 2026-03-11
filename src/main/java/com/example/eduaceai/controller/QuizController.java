@@ -44,4 +44,14 @@ public class QuizController {
 
         return ResponseEntity.ok(new ApiResponse("Lấy lịch sử làm bài thành công", history));
     }
+
+    @GetMapping("/result/{resultId}")
+    public ResponseEntity<ApiResponse> getResultDetail(@PathVariable Long resultId) {
+        return ResponseEntity.ok(new ApiResponse("Lấy chi tiết kết quả thành công", quizService.getResultDetail(resultId)));
+    }
+
+    @GetMapping("/{quizId}")
+    public ResponseEntity<ApiResponse> getQuiz(@PathVariable Long quizId) {
+        return ResponseEntity.ok(new ApiResponse("Lấy bộ đề thành công", quizService.getQuizDetail(quizId)));
+    }
 }

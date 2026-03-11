@@ -43,6 +43,10 @@ public class AuthServiceImpl implements IAuthService {
         User user = userRepository.findByStudentCode(req.studentCode())
                 .orElseThrow(() -> new BusinessException("Mã sinh viên hoặc mật khẩu không đúng", "400021"));
 
+        if (!user.isEnabled()) {
+            throw new BusinessException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin!", "403002");
+        }
+
         if (!passwordEncoder.matches(req.password(), user.getPassword())) {
             throw new BusinessException("Mã sinh viên hoặc mật khẩu không đúng", "400021");
         }

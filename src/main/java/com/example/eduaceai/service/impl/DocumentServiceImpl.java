@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -150,5 +151,24 @@ public class DocumentServiceImpl implements IDocumentService {
                         .createdAt(doc.getCreatedAt())
                         .build())
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public void deleteDocument(Long id) {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        Document doc = documentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException("Không tìm thấy tài liệu", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
+                .stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isAdmin && !doc.getUser().getStudentCode().equals(studentCode)) {
+            throw new BusinessException("Bạn không có quyền xóa tài liệu của người khác", "403001");
+        }
+
+        documentRepository.delete(doc);
     }
 }

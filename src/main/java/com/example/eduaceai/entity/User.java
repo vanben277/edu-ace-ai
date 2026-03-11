@@ -40,6 +40,9 @@ public class User {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     List<QuizResult> quizResults;
 
+    @Column(nullable = false)
+    private boolean enabled = true;
+
     public enum Role {
         STUDENT, ADMIN
     }

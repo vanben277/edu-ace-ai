@@ -14,4 +14,6 @@ public interface IDocumentService {
     Document getById(Long id);
 
     Object adminGetAllDocuments();
+
+    void deleteDocument(Long id);
 }

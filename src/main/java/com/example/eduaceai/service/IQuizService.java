@@ -16,4 +16,8 @@ public interface IQuizService {
     DashboardResponse getStudentDashboard();
 
     List<QuizHistoryResponse> getMyQuizHistory();
+
+    QuizResult getResultDetail(Long resultId);
+
+    Quiz getQuizDetail(Long quizId);
 }

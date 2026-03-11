@@ -14,5 +14,4 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     long countByUserStudentCode(String studentCode);
 
     Optional<Document> findByIdAndUserStudentCode(Long id, String studentCode);
-
 }

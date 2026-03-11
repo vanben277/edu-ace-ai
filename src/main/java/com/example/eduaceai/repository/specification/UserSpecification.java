@@ -14,6 +14,7 @@ public class UserSpecification {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            // Lọc theo từ khóa (Tên hoặc Mã sinh viên)
             if (form.search() != null && !form.search().isEmpty()) {
                 String pattern = "%" + form.search().toLowerCase() + "%";
                 predicates.add(cb.or(
@@ -22,8 +23,15 @@ public class UserSpecification {
                 ));
             }
 
+            // Lọc theo Vai trò (ADMIN/STUDENT)
             if (form.role() != null && !form.role().isEmpty()) {
                 predicates.add(cb.equal(root.get("role"), User.Role.valueOf(form.role().toUpperCase())));
+            }
+
+            // Lọc theo Trạng thái (Bị khóa hoặc Hoạt động)
+            // Nếu form.enabled() là null thì sẽ lấy tất cả (không lọc)
+            if (form.enabled() != null) {
+                predicates.add(cb.equal(root.get("enabled"), form.enabled()));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

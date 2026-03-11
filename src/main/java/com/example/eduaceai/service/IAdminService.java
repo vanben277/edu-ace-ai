@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface IAdminService {
     List<User> getAllUsers(UserFilterForm form);
+
+    void toggleUserStatus(Long userId);
 }

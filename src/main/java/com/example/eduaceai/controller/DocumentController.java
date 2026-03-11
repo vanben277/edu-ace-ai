@@ -34,4 +34,10 @@ public class DocumentController {
         var doc = documentService.getById(id);
         return ResponseEntity.ok(new ApiResponse("Lấy chi tiết tài liệu thành công", doc));
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse> delete(@PathVariable Long id) {
+        documentService.deleteDocument(id);
+        return ResponseEntity.ok(new ApiResponse("Đã xóa tài liệu và các dữ liệu liên quan thành công", null));
+    }
 }

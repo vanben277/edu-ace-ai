@@ -7,9 +7,7 @@ import com.example.eduaceai.service.IDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -32,5 +30,12 @@ public class AdminController {
     public ResponseEntity<ApiResponse> getAllSystemDocuments() {
         var docs = documentService.adminGetAllDocuments();
         return ResponseEntity.ok(new ApiResponse("Lấy toàn bộ tài liệu thành công", docs));
+    }
+
+    @PostMapping("/users/{userId}/toggle-status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse> toggleStatus(@PathVariable Long userId) {
+        adminService.toggleUserStatus(userId);
+        return ResponseEntity.ok(new ApiResponse("Cập nhật trạng thái người dùng thành công", null));
     }
 }

@@ -31,4 +31,7 @@ public class Quiz {
 
     @CreationTimestamp
     LocalDateTime createdAt;
+
+    @OneToMany(mappedBy = "quiz", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<QuizResult> quizResults;
 }
