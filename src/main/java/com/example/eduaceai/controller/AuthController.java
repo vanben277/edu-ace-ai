@@ -4,6 +4,7 @@ import com.example.eduaceai.dto.ApiResponse;
 import com.example.eduaceai.dto.req.LoginRequest;
 import com.example.eduaceai.dto.req.RegisterRequest;
 import com.example.eduaceai.service.IAuthService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,7 +25,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse> login(@RequestBody LoginRequest req) {
+    public ResponseEntity<ApiResponse> login(@Valid @RequestBody LoginRequest req) {
         var authRes = authService.login(req);
         return ResponseEntity.ok(new ApiResponse("Đăng nhập thành công", authRes));
     }
