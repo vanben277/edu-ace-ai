@@ -220,6 +220,10 @@ public class QuizServiceImpl implements IQuizService {
                 .map(ua -> new UserAnswerResponse(
                         ua.getQuestion().getId(),
                         ua.getQuestion().getContent(),
+                        ua.getQuestion().getOptionA(),
+                        ua.getQuestion().getOptionB(),
+                        ua.getQuestion().getOptionC(),
+                        ua.getQuestion().getOptionD(),
                         ua.getSelectedOption(),
                         ua.getQuestion().getCorrectAnswer(),
                         ua.isCorrect(),
@@ -234,7 +238,8 @@ public class QuizServiceImpl implements IQuizService {
                 result.getCorrectAnswers(),
                 result.getScore(),
                 result.getCompletedAt(),
-                answers
+                answers,
+                result.getQuiz().getId()
         );
     }
 }

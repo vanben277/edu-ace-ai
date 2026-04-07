@@ -10,6 +10,7 @@ public record QuizResultResponse(
         Integer correctAnswers,
         Double score,
         LocalDateTime completedAt,
-        List<UserAnswerResponse> answers
+        List<UserAnswerResponse> answers,
+        Long quizId
 ) {
 }

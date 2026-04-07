@@ -5,8 +5,6 @@ import com.example.eduaceai.dto.res.DashboardResponse;
 import com.example.eduaceai.dto.res.QuizHistoryResponse;
 import com.example.eduaceai.dto.res.QuizResponse;
 import com.example.eduaceai.dto.res.QuizResultResponse;
-import com.example.eduaceai.entity.Quiz;
-import com.example.eduaceai.entity.QuizResult;
 
 import java.util.List;
 
