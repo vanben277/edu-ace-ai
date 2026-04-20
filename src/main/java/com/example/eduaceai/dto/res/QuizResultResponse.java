@@ -11,6 +11,8 @@ public record QuizResultResponse(
         Double score,
         LocalDateTime completedAt,
         List<UserAnswerResponse> answers,
-        Long quizId
+        Long quizId,
+        LearningRoadmapResponse roadmap,
+        String roadmapServedBy
 ) {
 }

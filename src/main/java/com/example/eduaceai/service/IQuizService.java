@@ -9,7 +9,7 @@ import com.example.eduaceai.dto.res.QuizResultResponse;
 import java.util.List;
 
 public interface IQuizService {
-    QuizResponse createQuizFromAi(Long documentId, int num);
+    QuizResponse createQuizFromAi(Long documentId, int num, String topicHint);
 
     QuizResultResponse submitQuiz(SubmitQuizRequest req);
 

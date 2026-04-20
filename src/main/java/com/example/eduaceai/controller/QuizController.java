@@ -22,7 +22,11 @@ public class QuizController {
 
     @PostMapping("/generate")
     public ResponseEntity<ApiResponse> generateQuiz(@Valid @RequestBody GenerateQuizRequest req) {
-        QuizResponse quizRes = quizService.createQuizFromAi(req.documentId(), req.numberOfQuestions());
+        QuizResponse quizRes = quizService.createQuizFromAi(
+                req.documentId(),
+                req.numberOfQuestions(),
+                req.topicHint()
+        );
 
         return ResponseEntity.ok(new ApiResponse("Đã tạo bộ đề thi thành công từ AI", quizRes));
     }

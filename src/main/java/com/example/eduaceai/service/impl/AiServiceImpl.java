@@ -1,10 +1,11 @@
 package com.example.eduaceai.service.impl;
 
+import com.example.eduaceai.config.ResilientChatModel;
 import com.example.eduaceai.dto.res.InteractionResponse;
 import com.example.eduaceai.entity.Document;
 import com.example.eduaceai.entity.DocumentChunk;
 import com.example.eduaceai.entity.Interaction;
-import com.example.eduaceai.entity.Question;
+import com.example.eduaceai.entity.UserAnswer;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
 import com.example.eduaceai.repository.DocumentChunkRepository;
@@ -18,7 +19,6 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class AiServiceImpl implements IAiService {
-    private final GoogleAiGeminiChatModel geminiModel;
+    private final ResilientChatModel geminiModel;
     private final DocumentRepository documentRepository;
     private final QuizResultRepository quizResultRepository;
     private final InteractionRepository interactionRepository;
@@ -160,39 +160,52 @@ public class AiServiceImpl implements IAiService {
                 .orElseThrow(() -> new BusinessException("Không tìm thấy kết quả thi", ErrorCodeConstant.NOT_FOUND));
 
         var quiz = result.getQuiz();
-        var questions = quiz.getQuestions();
+
+        // Chỉ tập trung vào câu SAI thật sự, không liệt kê câu hỏi ngẫu nhiên
+        List<UserAnswer> wrongs = result.getUserAnswers().stream()
+                .filter(ua -> !ua.isCorrect())
+                .toList();
 
         StringBuilder summaryContext = new StringBuilder();
-        summaryContext.append(String.format("Kết quả: %d/%d câu đúng (%.2f/10 điểm).\n",
+        summaryContext.append(String.format("Kết quả: %d/%d câu đúng (%.2f/10 điểm).%n",
                 result.getCorrectAnswers(), result.getTotalQuestions(), result.getScore()));
 
-        summaryContext.append("Danh sách các kiến thức có trong đề thi:\n");
-
-        int limit = Math.min(questions.size(), 5);
-        for (int i = 0; i < limit; i++) {
-            Question q = questions.get(i);
-            String shortContent = q.getContent().length() > 100 ? q.getContent().substring(0, 100) : q.getContent();
-            summaryContext.append("- ").append(shortContent).append("\n");
+        if (wrongs.isEmpty()) {
+            summaryContext.append("Sinh viên trả lời đúng toàn bộ - chỉ cần nhận xét tích cực và gợi ý nâng cao.\n");
+        } else {
+            summaryContext.append("Các câu TRẢ LỜI SAI:\n");
+            int limit = Math.min(wrongs.size(), 8);
+            for (int i = 0; i < limit; i++) {
+                var ua = wrongs.get(i);
+                String shortContent = ua.getQuestion().getContent();
+                if (shortContent.length() > 140) shortContent = shortContent.substring(0, 140) + "...";
+                summaryContext.append(String.format("- %s (chọn %s, đúng: %s)%n",
+                        shortContent,
+                        ua.getSelectedOption() == null ? "(bỏ trống)" : ua.getSelectedOption(),
+                        ua.getQuestion().getCorrectAnswer()));
+            }
         }
 
         String prompt = """
                 Bạn là một giảng viên. Hãy nhận xét bài làm trắc nghiệm sau:
                 Tài liệu: %s
                 %s
-                
+
                 NHIỆM VỤ:
                 1. Nhận xét ngắn gọn điểm số (1 câu).
-                2. Chỉ ra 2 chủ đề kiến thức cần lưu ý dựa trên danh sách trên.
-                3. Đưa ra 3 lời khuyên học tập.
+                2. Chỉ ra tối đa 2 chủ đề kiến thức cần lưu ý dựa trên CÁC CÂU SAI ở trên (nếu có).
+                3. Đưa ra 3 lời khuyên học tập cụ thể.
                 Yêu cầu: Trình bày Markdown súc tích, dưới 200 từ.
                 """.formatted(quiz.getTitle(), summaryContext.toString());
 
         try {
             return geminiModel.generate(prompt);
         } catch (Exception e) {
+            log.error("[FEEDBACK] Tất cả tier AI thất bại: {}", e.getMessage());
             return "### Kết quả bài thi\n" +
-                    "* Bạn đạt: " + result.getScore() + " điểm.\n" +
-                    "* Hệ thống AI đang bận phân tích chi tiết. Bạn hãy xem lại các câu giải thích trong đề thi nhé!";
+                    "* Bạn đạt: " + result.getScore() + " điểm (" + result.getCorrectAnswers()
+                    + "/" + result.getTotalQuestions() + ").\n" +
+                    "* Hệ thống AI đang bận. Hãy xem lại phần giải thích của " + wrongs.size() + " câu sai để tự ôn lại nhé!";
         }
     }
 

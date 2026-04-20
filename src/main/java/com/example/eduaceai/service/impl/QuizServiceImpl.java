@@ -1,17 +1,20 @@
 package com.example.eduaceai.service.impl;
 
+import com.example.eduaceai.config.ResilientChatModel;
 import com.example.eduaceai.dto.req.SubmitQuizRequest;
 import com.example.eduaceai.dto.res.*;
 import com.example.eduaceai.entity.*;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
 import com.example.eduaceai.repository.DocumentRepository;
+import com.example.eduaceai.repository.LearningRoadmapRepository;
 import com.example.eduaceai.repository.QuizRepository;
 import com.example.eduaceai.repository.QuizResultRepository;
 import com.example.eduaceai.repository.UserRepository;
 import com.example.eduaceai.service.IAiService;
 import com.example.eduaceai.service.IQuizService;
 import com.example.eduaceai.service.ai.QuizAiService;
+import com.example.eduaceai.service.ai.RoadmapAiService;
 import com.example.eduaceai.utils.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
@@ -22,6 +25,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,29 +38,51 @@ public class QuizServiceImpl implements IQuizService {
     private final QuizResultRepository quizResultRepository;
     private final UserRepository userRepository;
     private final QuizAiService quizAiService;
+    private final RoadmapAiService roadmapAiService;
+    private final ResilientChatModel resilientChatModel;
+    private final LearningRoadmapRepository learningRoadmapRepository;
 
     @Override
     @Transactional
-    public QuizResponse createQuizFromAi(Long documentId, int num) {
+    public QuizResponse createQuizFromAi(Long documentId, int num, String topicHint) {
         Document doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new BusinessException("Không tìm thấy tài liệu", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
 
-        try {
-            // 1. Nhận về đối tượng Wrapper từ AI
-            QuizAiResponse aiResponse = quizAiService.generateQuiz(doc.getContent(), num);
+        // Nếu client không truyền hint → pass "NONE" để prompt AI biết mà mở rộng phạm vi
+        String effectiveHint = (topicHint == null || topicHint.isBlank()) ? "NONE" : topicHint.trim();
+        boolean isTargeted = !"NONE".equals(effectiveHint);
 
-            if (aiResponse == null || aiResponse.getQuestions() == null) {
+        try {
+            QuizAiResponse aiResponse = quizAiService.generateQuiz(doc.getContent(), num, effectiveHint);
+
+            if (aiResponse == null || aiResponse.getQuestions() == null || aiResponse.getQuestions().isEmpty()) {
                 throw new BusinessException("AI không thể tạo câu hỏi", ErrorCodeConstant.AI_SERVICE_ERROR);
             }
 
-            // 2. Tạo Quiz Entity
+            // Validate từng câu: correctAnswer phải là ký tự đơn A/B/C/D
+            // Nếu AI trả format sai (full text, số, lowercase...) → normalize hoặc reject
+            List<QuestionAiResponse> validated = aiResponse.getQuestions().stream()
+                    .map(this::normalizeQuestion)
+                    .filter(q -> q != null)
+                    .toList();
+
+            if (validated.isEmpty()) {
+                log.error("AI trả về toàn bộ câu hỏi có format không hợp lệ. Raw: {}", aiResponse);
+                throw new BusinessException(
+                        "AI trả về đề không đúng định dạng. Vui lòng thử lại.",
+                        ErrorCodeConstant.AI_SERVICE_ERROR);
+            }
+
+            String title = isTargeted
+                    ? "Luyện tập: " + effectiveHint + " (" + doc.getFileName() + ")"
+                    : "Bài ôn tập: " + doc.getFileName();
+
             Quiz quiz = Quiz.builder()
-                    .title("Bài ôn tập: " + doc.getFileName())
+                    .title(title)
                     .document(doc)
                     .build();
 
-            // 3. Map từ DTO AI sang Entity Question
-            List<Question> questions = aiResponse.getQuestions().stream()
+            List<Question> questions = validated.stream()
                     .map(res -> Question.builder()
                             .content(res.getContent())
                             .optionA(res.getOptionA())
@@ -71,7 +97,6 @@ public class QuizServiceImpl implements IQuizService {
 
             quiz.setQuestions(questions);
 
-            // 4. Lưu và trả về DTO thông qua hàm map dùng chung
             Quiz savedQuiz = quizRepository.save(quiz);
             return mapToQuizResponse(savedQuiz);
 
@@ -95,7 +120,6 @@ public class QuizServiceImpl implements IQuizService {
         List<UserAnswer> userAnswers = new ArrayList<>();
         int correctCount = 0;
 
-        // Chấm điểm từng câu
         for (Question q : questions) {
             String studentAnswer = req.answers().get(q.getId());
             boolean isCorrect = studentAnswer != null && studentAnswer.equalsIgnoreCase(q.getCorrectAnswer());
@@ -119,14 +143,18 @@ public class QuizServiceImpl implements IQuizService {
                 .score(Math.round(rawScore * 100.0) / 100.0)
                 .build();
 
-        // Thiết lập quan hệ 2 chiều để Cascade lưu cả userAnswers
         for (UserAnswer ua : userAnswers) {
             ua.setQuizResult(result);
         }
         result.setUserAnswers(userAnswers);
 
         QuizResult savedResult = quizResultRepository.save(result);
-        return mapToQuizResultResponse(savedResult); // Dùng lại hàm map
+
+        // Sinh lộ trình ngay trong flow submit: UX 1-click, không cần gọi API thứ 2
+        LearningRoadmapResponse roadmap = generateAndPersistRoadmap(savedResult);
+        String servedBy = resilientChatModel.getActiveTier();
+
+        return mapToQuizResultResponse(savedResult, roadmap, servedBy);
     }
 
     @Override
@@ -135,7 +163,6 @@ public class QuizServiceImpl implements IQuizService {
         QuizResult result = quizResultRepository.findById(resultId)
                 .orElseThrow(() -> new BusinessException("Không tìm thấy kết quả", "404000"));
 
-        // Kiểm tra quyền (Admin hoặc chính chủ)
         boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
                 .stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
@@ -144,7 +171,20 @@ public class QuizServiceImpl implements IQuizService {
             throw new BusinessException("Bạn không có quyền xem kết quả này", "403001");
         }
 
-        return mapToQuizResultResponse(result); // Dùng lại hàm map
+        // Đọc lại roadmap đã lưu (nếu có)
+        LearningRoadmapResponse roadmap = null;
+        String servedBy = null;
+        var saved = learningRoadmapRepository.findByQuizResultId(resultId);
+        if (saved.isPresent()) {
+            try {
+                roadmap = objectMapper.readValue(saved.get().getContentJson(), LearningRoadmapResponse.class);
+                servedBy = saved.get().getServedByTier();
+            } catch (Exception e) {
+                log.warn("Không parse được roadmap đã lưu cho resultId={}", resultId);
+            }
+        }
+
+        return mapToQuizResultResponse(result, roadmap, servedBy);
     }
 
     @Override
@@ -152,7 +192,7 @@ public class QuizServiceImpl implements IQuizService {
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new BusinessException("Không tìm thấy bộ đề", "404000"));
 
-        return mapToQuizResponse(quiz); // Dùng lại hàm map
+        return mapToQuizResponse(quiz);
     }
 
     @Override
@@ -198,6 +238,152 @@ public class QuizServiceImpl implements IQuizService {
                 .toList();
     }
 
+    /**
+     * Validate + normalize 1 câu hỏi AI sinh ra.
+     * Trả về null nếu câu không thể sửa được (thiếu trường quan trọng).
+     * - correctAnswer: ép về 1 ký tự A/B/C/D viết hoa. Nếu AI trả full text → match với optionA-D để suy ra.
+     * - content/options/explanation: bắt buộc có, nếu thiếu → reject.
+     */
+    private QuestionAiResponse normalizeQuestion(QuestionAiResponse q) {
+        if (q == null) return null;
+        if (isBlank(q.getContent()) || isBlank(q.getOptionA()) || isBlank(q.getOptionB())
+                || isBlank(q.getOptionC()) || isBlank(q.getOptionD())) {
+            log.warn("[QUIZ-VALIDATE] Bỏ câu thiếu content/options: {}", q.getContent());
+            return null;
+        }
+
+        String raw = q.getCorrectAnswer() == null ? "" : q.getCorrectAnswer().trim();
+        String letter = null;
+
+        // Case 1: đã là ký tự đơn A/B/C/D (hoa hoặc thường)
+        if (raw.length() == 1 && "ABCDabcd".indexOf(raw.charAt(0)) >= 0) {
+            letter = raw.toUpperCase();
+        }
+        // Case 2: dạng "A)" "A." "A:" — lấy ký tự đầu
+        else if (raw.length() >= 2 && "ABCDabcd".indexOf(raw.charAt(0)) >= 0
+                && "):. -".indexOf(raw.charAt(1)) >= 0) {
+            letter = String.valueOf(Character.toUpperCase(raw.charAt(0)));
+        }
+        // Case 3: AI trả full text đáp án → match với optionA-D
+        else {
+            String normalizedRaw = raw.toLowerCase();
+            if (normalizedRaw.equals(q.getOptionA().trim().toLowerCase())) letter = "A";
+            else if (normalizedRaw.equals(q.getOptionB().trim().toLowerCase())) letter = "B";
+            else if (normalizedRaw.equals(q.getOptionC().trim().toLowerCase())) letter = "C";
+            else if (normalizedRaw.equals(q.getOptionD().trim().toLowerCase())) letter = "D";
+        }
+
+        if (letter == null) {
+            log.warn("[QUIZ-VALIDATE] Không thể chuẩn hoá correctAnswer='{}' cho câu '{}', reject",
+                    raw, q.getContent());
+            return null;
+        }
+
+        q.setCorrectAnswer(letter);
+        if (isBlank(q.getExplanation())) {
+            q.setExplanation("Tham khảo lại tài liệu để biết chi tiết đáp án " + letter + ".");
+        }
+        return q;
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    /**
+     * Sinh roadmap dựa trên câu sai thực sự + lưu DB. Nếu AI (kể cả 3 tier) chết →
+     * fallback static để UX không bao giờ thấy lỗi.
+     */
+    private LearningRoadmapResponse generateAndPersistRoadmap(QuizResult result) {
+        List<UserAnswer> wrongs = result.getUserAnswers().stream()
+                .filter(ua -> !ua.isCorrect())
+                .toList();
+
+        LearningRoadmapResponse roadmap;
+        String tierServed;
+
+        if (wrongs.isEmpty()) {
+            roadmap = new LearningRoadmapResponse(
+                    "Xuất sắc! Bạn đã trả lời đúng toàn bộ câu hỏi.",
+                    List.of(),
+                    List.of(new LearningRoadmapResponse.StudyStep(
+                            1, "Nâng cao", "Thử đề khó hơn hoặc chủ đề mới", "Tạo một đề mới từ tài liệu khác")),
+                    "Duy trì phong độ — thử chủ đề kế tiếp!"
+            );
+            tierServed = "static-perfect";
+        } else {
+            String wrongsText = wrongs.stream()
+                    .limit(10)
+                    .map(ua -> "- Câu: " + trim(ua.getQuestion().getContent(), 160)
+                            + " | Bạn chọn: " + safe(ua.getSelectedOption())
+                            + " | Đáp án đúng: " + ua.getQuestion().getCorrectAnswer()
+                            + " | Giải thích: " + trim(safe(ua.getQuestion().getExplanation()), 200))
+                    .collect(Collectors.joining("\n"));
+
+            try {
+                roadmap = roadmapAiService.generateRoadmap(
+                        result.getQuiz().getTitle(),
+                        result.getScore(),
+                        result.getCorrectAnswers(),
+                        result.getTotalQuestions(),
+                        wrongsText
+                );
+                // Sanitize: chỉ accept tier name trong whitelist, tránh leak giá trị lạ (failed/none)
+                String rawTier = resilientChatModel.getActiveTier();
+                tierServed = resilientChatModel.isKnownTier(rawTier) ? rawTier : "static-fallback";
+            } catch (Exception e) {
+                log.error("[ROADMAP] Tất cả tier AI thất bại, dùng fallback tĩnh: {}", e.getMessage());
+                roadmap = staticFallbackRoadmap(wrongs);
+                tierServed = "static-fallback";
+            }
+        }
+
+        try {
+            String json = objectMapper.writeValueAsString(roadmap);
+            learningRoadmapRepository.save(LearningRoadmap.builder()
+                    .quizResult(result)
+                    .contentJson(json)
+                    .servedByTier(tierServed)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Không lưu được roadmap vào DB: {}", e.getMessage());
+        }
+
+        return roadmap;
+    }
+
+    private LearningRoadmapResponse staticFallbackRoadmap(List<UserAnswer> wrongs) {
+        List<LearningRoadmapResponse.WeakTopic> topics = new ArrayList<>();
+        topics.add(new LearningRoadmapResponse.WeakTopic(
+                "Các nội dung chưa nắm vững", wrongs.size(), "CAO"));
+
+        List<LearningRoadmapResponse.StudyStep> steps = new ArrayList<>();
+        steps.add(new LearningRoadmapResponse.StudyStep(
+                1, "Xem lại lý thuyết",
+                "Đọc lại " + wrongs.size() + " câu sai kèm giải thích",
+                "Làm lại các câu đó sau 1 ngày"));
+        steps.add(new LearningRoadmapResponse.StudyStep(
+                2, "Luyện tập mở rộng",
+                "Tạo đề mới từ cùng tài liệu",
+                "Hoàn thành với ít nhất 80% đúng"));
+
+        return new LearningRoadmapResponse(
+                "Bạn còn " + wrongs.size() + " câu chưa đúng. Hãy tập trung ôn lại!",
+                topics,
+                steps,
+                "Xem lại phần giải thích và làm đề ôn lần hai."
+        );
+    }
+
+    private static String trim(String s, int max) {
+        if (s == null) return "";
+        return s.length() <= max ? s : s.substring(0, max) + "...";
+    }
+
+    private static String safe(String s) {
+        return s == null ? "(bỏ trống)" : s;
+    }
+
     private QuizResponse mapToQuizResponse(Quiz quiz) {
         List<QuestionResponse> questions = quiz.getQuestions().stream()
                 .map(q -> new QuestionResponse(
@@ -215,7 +401,9 @@ public class QuizServiceImpl implements IQuizService {
         );
     }
 
-    private QuizResultResponse mapToQuizResultResponse(QuizResult result) {
+    private QuizResultResponse mapToQuizResultResponse(QuizResult result,
+                                                       LearningRoadmapResponse roadmap,
+                                                       String servedBy) {
         List<UserAnswerResponse> answers = result.getUserAnswers().stream()
                 .map(ua -> new UserAnswerResponse(
                         ua.getQuestion().getId(),
@@ -239,7 +427,9 @@ public class QuizServiceImpl implements IQuizService {
                 result.getScore(),
                 result.getCompletedAt(),
                 answers,
-                result.getQuiz().getId()
+                result.getQuiz().getId(),
+                roadmap,
+                servedBy
         );
     }
 }
