@@ -8,6 +8,15 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
+/**
+ * Chain-of-responsibility wrapper: thử từng ChatLanguageModel theo thứ tự.
+ *
+ * <p>Tier "hiện tại phục vụ" được expose qua getActiveTier() để caller đọc sau khi
+ * generate() thành công — dùng {@link ThreadLocal} để tránh race condition giữa các request
+ * đồng thời (trước đây dùng AtomicReference bị sai khi nhiều thread share cùng 1 instance).
+ *
+ * <p>Implement ChatLanguageModel để AiServices.create() inject trong suốt.
+ */
 @Slf4j
 public class ResilientChatModel implements ChatLanguageModel {
 

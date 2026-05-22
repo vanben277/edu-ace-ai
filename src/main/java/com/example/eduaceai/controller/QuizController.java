@@ -23,7 +23,7 @@ public class QuizController {
     @PostMapping("/generate")
     public ResponseEntity<ApiResponse> generateQuiz(@Valid @RequestBody GenerateQuizRequest req) {
         QuizResponse quizRes = quizService.createQuizFromAi(
-                req.documentId(),
+                req.documentIds(),
                 req.numberOfQuestions(),
                 req.topicHint()
         );

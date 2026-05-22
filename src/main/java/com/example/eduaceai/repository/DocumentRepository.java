@@ -11,7 +11,15 @@ import java.util.Optional;
 public interface DocumentRepository extends JpaRepository<Document, Long> {
     List<Document> findByUserStudentCode(String studentCode);
 
+    List<Document> findByUserStudentCodeAndSubjectId(String studentCode, Long subjectId);
+
+    List<Document> findByUserStudentCodeAndSubjectIsNull(String studentCode);
+
     long countByUserStudentCode(String studentCode);
 
+    long countBySubjectId(Long subjectId);
+
     Optional<Document> findByIdAndUserStudentCode(Long id, String studentCode);
+
+    List<Document> findBySubjectId(Long subjectId);
 }

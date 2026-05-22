@@ -2,6 +2,7 @@ package com.example.eduaceai.controller;
 
 import com.example.eduaceai.dto.ApiResponse;
 import com.example.eduaceai.dto.req.ChatOnDocumentRequest;
+import com.example.eduaceai.dto.req.ChatOnDocumentsRequest;
 import com.example.eduaceai.dto.req.ChatRequest;
 import com.example.eduaceai.service.IAiService;
 import jakarta.validation.Valid;
@@ -25,6 +26,12 @@ public class AiController {
     public ResponseEntity<ApiResponse> chatOnDocument(@Valid @RequestBody ChatOnDocumentRequest request) {
         String response = aiService.askAiOnDocument(request.documentId(), request.message());
         return ResponseEntity.ok(new ApiResponse("AI đã đọc tài liệu và phản hồi", response));
+    }
+
+    @PostMapping("/chat-on-documents")
+    public ResponseEntity<ApiResponse> chatOnDocuments(@Valid @RequestBody ChatOnDocumentsRequest request) {
+        String response = aiService.askAiOnDocuments(request.documentIds(), request.message());
+        return ResponseEntity.ok(new ApiResponse("AI đã đọc các tài liệu và phản hồi", response));
     }
 
     @GetMapping("/{resultId}/feedback")

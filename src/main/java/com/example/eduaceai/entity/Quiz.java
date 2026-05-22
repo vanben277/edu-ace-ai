@@ -26,6 +26,14 @@ public class Quiz {
     @JoinColumn(name = "document_id")
     Document document;
 
+    @ManyToMany
+    @JoinTable(
+            name = "quiz_source_documents",
+            joinColumns = @JoinColumn(name = "quiz_id"),
+            inverseJoinColumns = @JoinColumn(name = "document_id")
+    )
+    List<Document> sourceDocuments;
+
     @OneToMany(mappedBy = "quiz", cascade = CascadeType.ALL)
     List<Question> questions;
 

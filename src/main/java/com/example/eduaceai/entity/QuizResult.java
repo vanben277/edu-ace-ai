@@ -39,4 +39,11 @@ public class QuizResult {
 
     @OneToMany(mappedBy = "quizResult", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<UserAnswer> userAnswers;
+
+    // Bidirectional side để JPA cascade-delete LearningRoadmap khi QuizResult bị xoá.
+    // Thiếu cái này → khi cascade từ Document → Quiz → QuizResult, MySQL chặn vì FK
+    // learning_roadmaps.quiz_result_id còn trỏ vào row đang bị xoá.
+    @OneToOne(mappedBy = "quizResult", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private LearningRoadmap learningRoadmap;
 }

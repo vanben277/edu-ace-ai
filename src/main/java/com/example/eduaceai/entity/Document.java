@@ -37,6 +37,11 @@ public class Document {
     @JsonIgnore
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "subject_id")
+    @JsonIgnore
+    private Subject subject;
+
     @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentChunk> chunks;
 

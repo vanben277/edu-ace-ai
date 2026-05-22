@@ -10,6 +10,8 @@ public interface IAiService {
 
     String askAiOnDocument(Long documentId, String message);
 
+    String askAiOnDocuments(List<Long> documentIds, String message);
+
     String generateQuizJson(Long documentId, int num);
 
     String getQuizFeedback(Long resultId);

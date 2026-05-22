@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -18,4 +19,5 @@ public class QuizHistoryResponse {
     private Integer correctAnswers;
     private Integer totalQuestions;
     private LocalDateTime completedAt;
+    private List<Long> sourceDocumentIds;
 }

@@ -11,14 +11,11 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DocumentResponse {
+public class SubjectResponse {
     private Long id;
-    private String fileName;
-    private String fileType;
-    private Long fileSize;
-    private String content;
-    private String ownerCode;
-    private Long subjectId;
-    private String subjectName;
+    private String name;
+    private String description;
+    private String color;
+    private Integer documentCount;
     private LocalDateTime createdAt;
 }

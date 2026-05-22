@@ -3,12 +3,15 @@ package com.example.eduaceai.service.impl;
 import com.example.eduaceai.dto.res.DocumentResponse;
 import com.example.eduaceai.entity.Document;
 import com.example.eduaceai.entity.DocumentChunk;
+import com.example.eduaceai.entity.Subject;
 import com.example.eduaceai.entity.User;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
 import com.example.eduaceai.exception.NotFoundException;
 import com.example.eduaceai.repository.DocumentChunkRepository;
 import com.example.eduaceai.repository.DocumentRepository;
+import com.example.eduaceai.repository.QuizRepository;
+import com.example.eduaceai.repository.SubjectRepository;
 import com.example.eduaceai.repository.UserRepository;
 import com.example.eduaceai.service.IDocumentService;
 import com.example.eduaceai.utils.SecurityUtils;
@@ -34,13 +37,15 @@ import java.util.Objects;
 public class DocumentServiceImpl implements IDocumentService {
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
+    private final SubjectRepository subjectRepository;
     private final DocumentChunkRepository chunkRepository;
+    private final QuizRepository quizRepository;
     private final EmbeddingModel embeddingModel;
     private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
-    public DocumentResponse uploadDocument(MultipartFile file) {
+    public DocumentResponse uploadDocument(MultipartFile file, Long subjectId) {
         if (!Objects.equals(file.getContentType(), "application/pdf")) {
             throw new BusinessException("Chỉ hỗ trợ định dạng file PDF", ErrorCodeConstant.INVALID_FILE_TYPE);
         }
@@ -49,9 +54,10 @@ public class DocumentServiceImpl implements IDocumentService {
         User currentUser = userRepository.findByStudentCode(studentCode)
                 .orElseThrow(() -> new NotFoundException("Người dùng không tồn tại", ErrorCodeConstant.USER_NOT_FOUND));
 
+        Subject subject = resolveSubject(subjectId, studentCode);
+
         try {
-            // Bóc tách chữ từ PDF bằng PDFBox
-            String extractedText = "";
+            String extractedText;
             try (PDDocument pdDocument = PDDocument.load(file.getInputStream())) {
                 PDFTextStripper stripper = new PDFTextStripper();
                 extractedText = stripper.getText(pdDocument);
@@ -67,14 +73,13 @@ public class DocumentServiceImpl implements IDocumentService {
                     .fileSize(file.getSize())
                     .content(extractedText)
                     .user(currentUser)
+                    .subject(subject)
                     .build();
 
             Document savedDoc = documentRepository.save(document);
 
-            // Băm nhỏ và lưu Vector
-            List<String> chunks = splitText(extractedText, 800); // 800 ký tự mỗi đoạn
+            List<String> chunks = splitText(extractedText, 800);
             for (String text : chunks) {
-                // Tạo Vector từ đoạn văn
                 float[] vector = embeddingModel.embed(text).content().vector();
 
                 try {
@@ -89,17 +94,35 @@ public class DocumentServiceImpl implements IDocumentService {
                 }
             }
 
-            return DocumentResponse.builder()
-                    .id(savedDoc.getId())
-                    .fileName(savedDoc.getFileName())
-                    .fileType(savedDoc.getFileType())
-                    .fileSize(savedDoc.getFileSize())
-                    .createdAt(savedDoc.getCreatedAt())
-                    .build();
+            return toResponse(savedDoc, false);
 
         } catch (IOException e) {
             throw new BusinessException("Lỗi trong quá trình xử lý file", ErrorCodeConstant.FILE_UPLOAD_FAILED);
         }
+    }
+
+    @Override
+    @Transactional
+    public List<DocumentResponse> uploadDocuments(List<MultipartFile> files, Long subjectId) {
+        if (files == null || files.isEmpty()) {
+            throw new BusinessException("Vui lòng chọn ít nhất một file", ErrorCodeConstant.BAD_REQUEST);
+        }
+        if (files.size() > 4) {
+            throw new BusinessException("Mỗi lần chỉ được upload tối đa 4 tài liệu", ErrorCodeConstant.TOO_MANY_DOCUMENTS);
+        }
+        List<DocumentResponse> responses = new ArrayList<>();
+        for (MultipartFile file : files) {
+            responses.add(uploadDocument(file, subjectId));
+        }
+        return responses;
+    }
+
+    private Subject resolveSubject(Long subjectId, String studentCode) {
+        if (subjectId == null) {
+            return null;
+        }
+        return subjectRepository.findByIdAndUserStudentCode(subjectId, studentCode)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy môn học", ErrorCodeConstant.SUBJECT_NOT_FOUND));
     }
 
     private List<String> splitText(String text, int size) {
@@ -113,19 +136,20 @@ public class DocumentServiceImpl implements IDocumentService {
     }
 
     @Override
-    public List<DocumentResponse> getAllDocuments() {
+    public List<DocumentResponse> getAllDocuments(Long subjectId, Boolean unassignedOnly) {
         String studentCode = SecurityUtils.getCurrentStudentCode();
 
-        List<Document> documents = documentRepository.findByUserStudentCode(studentCode);
+        List<Document> documents;
+        if (Boolean.TRUE.equals(unassignedOnly)) {
+            documents = documentRepository.findByUserStudentCodeAndSubjectIsNull(studentCode);
+        } else if (subjectId != null) {
+            documents = documentRepository.findByUserStudentCodeAndSubjectId(studentCode, subjectId);
+        } else {
+            documents = documentRepository.findByUserStudentCode(studentCode);
+        }
 
         return documents.stream()
-                .map(doc -> DocumentResponse.builder()
-                        .id(doc.getId())
-                        .fileName(doc.getFileName())
-                        .fileType(doc.getFileType())
-                        .fileSize(doc.getFileSize())
-                        .createdAt(doc.getCreatedAt())
-                        .build())
+                .map(doc -> toResponse(doc, false))
                 .toList();
     }
 
@@ -144,15 +168,7 @@ public class DocumentServiceImpl implements IDocumentService {
             throw new BusinessException("Bạn không có quyền xem tài liệu này", "403001");
         }
 
-        return DocumentResponse.builder()
-                .id(doc.getId())
-                .fileName(doc.getFileName())
-                .fileType(doc.getFileType())
-                .fileSize(doc.getFileSize())
-                .content(doc.getContent())
-                .ownerCode(doc.getUser().getStudentCode())
-                .createdAt(doc.getCreatedAt())
-                .build();
+        return toResponse(doc, true);
     }
 
     @Override
@@ -160,14 +176,7 @@ public class DocumentServiceImpl implements IDocumentService {
         List<Document> allDocs = documentRepository.findAll();
 
         return allDocs.stream()
-                .map(doc -> DocumentResponse.builder()
-                        .id(doc.getId())
-                        .fileName(doc.getFileName())
-                        .fileType(doc.getFileType())
-                        .fileSize(doc.getFileSize())
-                        .ownerCode(doc.getUser() != null ? doc.getUser().getStudentCode() : "N/A")
-                        .createdAt(doc.getCreatedAt())
-                        .build())
+                .map(doc -> toResponse(doc, false))
                 .toList();
     }
 
@@ -187,6 +196,40 @@ public class DocumentServiceImpl implements IDocumentService {
             throw new BusinessException("Bạn không có quyền xóa tài liệu của người khác", "403001");
         }
 
+        // Dọn join-table quiz_source_documents trước khi xoá document, vì Hibernate ManyToMany không
+        // tự cascade từ phía Document — không xoá rows ở đây sẽ gây FK violation trên MySQL.
+        quizRepository.deleteSourceDocumentLinksForDocument(doc.getId());
+
         documentRepository.delete(doc);
+    }
+
+    @Override
+    @Transactional
+    public DocumentResponse setSubject(Long documentId, Long subjectId) {
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        Document doc = documentRepository.findByIdAndUserStudentCode(documentId, studentCode)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy tài liệu", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+
+        Subject subject = resolveSubject(subjectId, studentCode);
+        doc.setSubject(subject);
+        Document saved = documentRepository.save(doc);
+
+        return toResponse(saved, false);
+    }
+
+    private DocumentResponse toResponse(Document doc, boolean includeContent) {
+        Subject subject = doc.getSubject();
+        return DocumentResponse.builder()
+                .id(doc.getId())
+                .fileName(doc.getFileName())
+                .fileType(doc.getFileType())
+                .fileSize(doc.getFileSize())
+                .content(includeContent ? doc.getContent() : null)
+                .ownerCode(doc.getUser() != null ? doc.getUser().getStudentCode() : "N/A")
+                .subjectId(subject != null ? subject.getId() : null)
+                .subjectName(subject != null ? subject.getName() : null)
+                .createdAt(doc.getCreatedAt())
+                .build();
     }
 }

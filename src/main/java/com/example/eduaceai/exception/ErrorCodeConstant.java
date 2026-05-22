@@ -11,4 +11,8 @@ public class ErrorCodeConstant {
     public static final String AI_SERVICE_ERROR = "500010";
     public static final String FILE_UPLOAD_FAILED = "400028";
     public static final String INVALID_FILE_TYPE = "400029";
+
+    public static final String SUBJECT_NOT_FOUND = "404020";
+    public static final String SUBJECT_NAME_DUPLICATE = "409020";
+    public static final String TOO_MANY_DOCUMENTS = "400030";
 }

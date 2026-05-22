@@ -42,25 +42,44 @@ public class QuizServiceImpl implements IQuizService {
     private final ResilientChatModel resilientChatModel;
     private final LearningRoadmapRepository learningRoadmapRepository;
 
+    private static final int MAX_CHARS_PER_DOC = 20000;
+
     @Override
     @Transactional
-    public QuizResponse createQuizFromAi(Long documentId, int num, String topicHint) {
-        Document doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new BusinessException("Không tìm thấy tài liệu", ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+    public QuizResponse createQuizFromAi(List<Long> documentIds, int num, String topicHint) {
+        if (documentIds == null || documentIds.isEmpty()) {
+            throw new BusinessException("Cần chọn ít nhất 1 tài liệu", ErrorCodeConstant.BAD_REQUEST);
+        }
+        if (documentIds.size() > 3) {
+            throw new BusinessException("Trắc nghiệm tối đa 3 tài liệu cùng lúc", ErrorCodeConstant.TOO_MANY_DOCUMENTS);
+        }
 
-        // Nếu client không truyền hint → pass "NONE" để prompt AI biết mà mở rộng phạm vi
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+
+        List<Document> docs = new ArrayList<>();
+        for (Long id : documentIds) {
+            Document d = documentRepository.findByIdAndUserStudentCode(id, studentCode)
+                    .orElseThrow(() -> new BusinessException(
+                            "Tài liệu id=" + id + " không tồn tại hoặc không có quyền",
+                            ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+            docs.add(d);
+        }
+
         String effectiveHint = (topicHint == null || topicHint.isBlank()) ? "NONE" : topicHint.trim();
         boolean isTargeted = !"NONE".equals(effectiveHint);
 
+        String combinedContent = docs.stream()
+                .map(d -> "## Tài liệu: " + d.getFileName() + "\n"
+                        + truncateContent(d.getContent(), MAX_CHARS_PER_DOC))
+                .collect(Collectors.joining("\n\n"));
+
         try {
-            QuizAiResponse aiResponse = quizAiService.generateQuiz(doc.getContent(), num, effectiveHint);
+            QuizAiResponse aiResponse = quizAiService.generateQuiz(combinedContent, num, effectiveHint);
 
             if (aiResponse == null || aiResponse.getQuestions() == null || aiResponse.getQuestions().isEmpty()) {
                 throw new BusinessException("AI không thể tạo câu hỏi", ErrorCodeConstant.AI_SERVICE_ERROR);
             }
 
-            // Validate từng câu: correctAnswer phải là ký tự đơn A/B/C/D
-            // Nếu AI trả format sai (full text, số, lowercase...) → normalize hoặc reject
             List<QuestionAiResponse> validated = aiResponse.getQuestions().stream()
                     .map(this::normalizeQuestion)
                     .filter(q -> q != null)
@@ -73,13 +92,19 @@ public class QuizServiceImpl implements IQuizService {
                         ErrorCodeConstant.AI_SERVICE_ERROR);
             }
 
+            String docNamesShort = docs.stream()
+                    .map(Document::getFileName)
+                    .collect(Collectors.joining(" + "));
             String title = isTargeted
-                    ? "Luyện tập: " + effectiveHint + " (" + doc.getFileName() + ")"
-                    : "Bài ôn tập: " + doc.getFileName();
+                    ? "Luyện tập: " + effectiveHint + " (" + docs.size() + " tài liệu)"
+                    : docs.size() == 1
+                            ? "Bài ôn tập: " + docs.get(0).getFileName()
+                            : "Bài ôn tập tổng hợp: " + docNamesShort;
 
             Quiz quiz = Quiz.builder()
                     .title(title)
-                    .document(doc)
+                    .document(docs.get(0))
+                    .sourceDocuments(new ArrayList<>(docs))
                     .build();
 
             List<Question> questions = validated.stream()
@@ -100,10 +125,17 @@ public class QuizServiceImpl implements IQuizService {
             Quiz savedQuiz = quizRepository.save(quiz);
             return mapToQuizResponse(savedQuiz);
 
+        } catch (BusinessException be) {
+            throw be;
         } catch (Exception e) {
             log.error("Lỗi tạo Quiz: ", e);
             throw new BusinessException("Hệ thống AI không thể tạo đề thi. Thử lại sau!", ErrorCodeConstant.AI_SERVICE_ERROR);
         }
+    }
+
+    private static String truncateContent(String content, int maxChars) {
+        if (content == null) return "";
+        return content.length() <= maxChars ? content : content.substring(0, maxChars);
     }
 
     @Override
@@ -227,14 +259,28 @@ public class QuizServiceImpl implements IQuizService {
         List<QuizResult> results = quizResultRepository.findByUserStudentCode(studentCode);
 
         return results.stream()
-                .map(r -> QuizHistoryResponse.builder()
-                        .id(r.getId())
-                        .quizTitle(r.getQuiz().getTitle())
-                        .score(r.getScore())
-                        .correctAnswers(r.getCorrectAnswers())
-                        .totalQuestions(r.getTotalQuestions())
-                        .completedAt(r.getCompletedAt())
-                        .build())
+                .map(r -> {
+                    Quiz quiz = r.getQuiz();
+                    List<Long> sourceIds;
+                    if (quiz.getSourceDocuments() != null && !quiz.getSourceDocuments().isEmpty()) {
+                        sourceIds = quiz.getSourceDocuments().stream()
+                                .map(Document::getId)
+                                .toList();
+                    } else if (quiz.getDocument() != null) {
+                        sourceIds = List.of(quiz.getDocument().getId());
+                    } else {
+                        sourceIds = List.of();
+                    }
+                    return QuizHistoryResponse.builder()
+                            .id(r.getId())
+                            .quizTitle(quiz.getTitle())
+                            .score(r.getScore())
+                            .correctAnswers(r.getCorrectAnswers())
+                            .totalQuestions(r.getTotalQuestions())
+                            .completedAt(r.getCompletedAt())
+                            .sourceDocumentIds(sourceIds)
+                            .build();
+                })
                 .toList();
     }
 
@@ -392,10 +438,28 @@ public class QuizServiceImpl implements IQuizService {
                         q.getCorrectAnswer(), q.getExplanation()))
                 .toList();
 
+        List<Document> sources = quiz.getSourceDocuments();
+        List<Long> sourceIds;
+        List<String> sourceNames;
+        if (sources != null && !sources.isEmpty()) {
+            sourceIds = sources.stream().map(Document::getId).toList();
+            sourceNames = sources.stream().map(Document::getFileName).toList();
+        } else if (quiz.getDocument() != null) {
+            sourceIds = List.of(quiz.getDocument().getId());
+            sourceNames = List.of(quiz.getDocument().getFileName());
+        } else {
+            sourceIds = List.of();
+            sourceNames = List.of();
+        }
+
+        Long primaryDocId = quiz.getDocument() != null ? quiz.getDocument().getId() : null;
+
         return new QuizResponse(
                 quiz.getId(),
                 quiz.getTitle(),
-                quiz.getDocument().getId(),
+                primaryDocId,
+                sourceIds,
+                sourceNames,
                 questions,
                 quiz.getCreatedAt()
         );

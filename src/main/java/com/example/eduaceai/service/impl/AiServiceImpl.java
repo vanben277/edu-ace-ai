@@ -62,6 +62,87 @@ public class AiServiceImpl implements IAiService {
     }
 
     @Override
+    public String askAiOnDocuments(List<Long> documentIds, String message) {
+        if (documentIds == null || documentIds.isEmpty()) {
+            throw new BusinessException("Cần ít nhất 1 tài liệu", ErrorCodeConstant.BAD_REQUEST);
+        }
+        if (documentIds.size() > 4) {
+            throw new BusinessException("Chat tối đa 4 tài liệu cùng lúc", ErrorCodeConstant.TOO_MANY_DOCUMENTS);
+        }
+
+        String studentCode = SecurityUtils.getCurrentStudentCode();
+        List<Document> docs = new java.util.ArrayList<>();
+        for (Long id : documentIds) {
+            Document d = documentRepository.findByIdAndUserStudentCode(id, studentCode)
+                    .orElseThrow(() -> new BusinessException(
+                            "Tài liệu id=" + id + " không tồn tại hoặc không có quyền",
+                            ErrorCodeConstant.DOCUMENT_NOT_FOUND));
+            docs.add(d);
+        }
+
+        InMemoryEmbeddingStore<DocumentChunk> store = new InMemoryEmbeddingStore<>();
+        int totalChunks = 0;
+        for (Document doc : docs) {
+            List<DocumentChunk> chunks = documentChunkRepository.findByDocumentId(doc.getId());
+            for (DocumentChunk c : chunks) {
+                try {
+                    float[] vector = objectMapper.readValue(c.getEmbeddingJson(), float[].class);
+                    store.add(Embedding.from(vector), c);
+                    totalChunks++;
+                } catch (Exception e) {
+                    log.error("Lỗi parse vector cho chunk {}: {}", c.getId(), e.getMessage());
+                }
+            }
+        }
+
+        if (totalChunks == 0) {
+            throw new BusinessException("Các tài liệu chưa có dữ liệu AI. Vui lòng upload lại.", ErrorCodeConstant.BAD_REQUEST);
+        }
+
+        Embedding queryEmbedding = embeddingModel.embed(message).content();
+        int topK = Math.min(8, Math.max(3, docs.size() * 2));
+        var matches = store.findRelevant(queryEmbedding, topK, 0.55);
+
+        String relevantContext = matches.stream()
+                .map(m -> {
+                    DocumentChunk chunk = m.embedded();
+                    String src = chunk.getDocument() != null
+                            ? chunk.getDocument().getFileName()
+                            : "Tài liệu không xác định";
+                    return "[Trích từ: " + src + "]\n" + chunk.getContent();
+                })
+                .collect(Collectors.joining("\n---\n"));
+
+        if (relevantContext.isEmpty()) {
+            relevantContext = "Không tìm thấy đoạn trực tiếp trả lời câu hỏi.";
+        }
+
+        String docNamesList = docs.stream()
+                .map(Document::getFileName)
+                .collect(Collectors.joining(", "));
+
+        SystemMessage systemMessage = SystemMessage.from("""
+                BẠN LÀ: EduAce - Trợ lý ôn thi chuyên nghiệp.
+                NHIỆM VỤ: Trả lời câu hỏi dựa trên đoạn trích từ %d tài liệu: %s
+
+                NGỮ CẢNH TRÍCH DẪN (mỗi đoạn gắn nhãn nguồn):
+                ---
+                %s
+                ---
+
+                QUY TẮC:
+                - Khi trích thông tin, hãy NÊU RÕ nguồn theo nhãn [Trích từ: ...].
+                - Nếu sinh viên yêu cầu so sánh hoặc đối chiếu, làm rõ điểm giống/khác giữa các tài liệu.
+                - Nếu không có trong ngữ cảnh, lịch sự nói: 'Thông tin này không có trong các tài liệu đã chọn, nhưng theo kiến thức học thuật chung thì...'
+                - Trình bày Markdown rõ ràng, dùng heading khi so sánh nhiều nguồn.
+                """.formatted(docs.size(), docNamesList, relevantContext));
+
+        UserMessage userMessage = UserMessage.from("Câu hỏi của sinh viên: " + message);
+
+        return geminiModel.generate(List.of(systemMessage, userMessage)).content().text();
+    }
+
+    @Override
     public String askAiOnDocument(Long documentId, String message) {
         String studentCode = SecurityUtils.getCurrentStudentCode();
         Document doc = documentRepository.findByIdAndUserStudentCode(documentId, studentCode)

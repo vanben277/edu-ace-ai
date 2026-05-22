@@ -7,6 +7,8 @@ public record QuizResponse(
         Long id,
         String title,
         Long documentId,
+        List<Long> sourceDocumentIds,
+        List<String> sourceDocumentNames,
         List<QuestionResponse> questions,
         LocalDateTime createdAt
 ) {

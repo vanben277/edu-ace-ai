@@ -44,10 +44,13 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/ai/**",
                                 "/api/documents/**",
-                                "/api/quizzes/**"
+                                "/api/quizzes/**",
+                                "/api/subjects/**"
                         ).authenticated()
                         .anyRequest().authenticated()
                 )
+                // Override default Http403ForbiddenEntryPoint → trả 401 cho unauthenticated requests.
+                // Consensus RFC 6750 + 6 khu vực: auth failure (no/invalid token) = 401, không phải 403.
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(unauthorizedEntryPoint()))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

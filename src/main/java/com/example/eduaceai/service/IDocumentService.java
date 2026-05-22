@@ -6,13 +6,17 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 public interface IDocumentService {
-    DocumentResponse uploadDocument(MultipartFile file);
+    DocumentResponse uploadDocument(MultipartFile file, Long subjectId);
 
-    List<DocumentResponse> getAllDocuments();
+    List<DocumentResponse> uploadDocuments(List<MultipartFile> files, Long subjectId);
+
+    List<DocumentResponse> getAllDocuments(Long subjectId, Boolean unassignedOnly);
 
     DocumentResponse getById(Long id);
 
     Object adminGetAllDocuments();
 
     void deleteDocument(Long id);
+
+    DocumentResponse setSubject(Long documentId, Long subjectId);
 }
