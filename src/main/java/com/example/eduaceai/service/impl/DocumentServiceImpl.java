@@ -67,8 +67,10 @@ public class DocumentServiceImpl implements IDocumentService {
                 throw new BusinessException("File PDF rỗng hoặc không có nội dung chữ", ErrorCodeConstant.BAD_REQUEST);
             }
 
+            String uniqueFileName = resolveUniqueFileName(studentCode, file.getOriginalFilename());
+
             Document document = Document.builder()
-                    .fileName(file.getOriginalFilename())
+                    .fileName(uniqueFileName)
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
                     .content(extractedText)
@@ -123,6 +125,33 @@ public class DocumentServiceImpl implements IDocumentService {
         }
         return subjectRepository.findByIdAndUserStudentCode(subjectId, studentCode)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy môn học", ErrorCodeConstant.SUBJECT_NOT_FOUND));
+    }
+
+    private String resolveUniqueFileName(String studentCode, String original) {
+        String name = (original == null || original.isBlank()) ? "tài liệu.pdf" : original.trim();
+
+        int dot = name.lastIndexOf('.');
+        String base = (dot > 0) ? name.substring(0, dot) : name;
+        String ext = (dot > 0) ? name.substring(dot) : "";
+
+        base = base.replaceAll("\\s*\\(\\d+\\)$", "").trim();
+        if (base.isEmpty()) base = "tài liệu";
+
+        List<String> existing = documentRepository.findByUserStudentCode(studentCode).stream()
+                .map(Document::getFileName)
+                .filter(Objects::nonNull)
+                .toList();
+
+        String candidate = base + ext;
+        if (existing.stream().noneMatch(candidate::equalsIgnoreCase)) {
+            return candidate;
+        }
+        for (int n = 1; ; n++) {
+            String next = base + " (" + n + ")" + ext;
+            if (existing.stream().noneMatch(next::equalsIgnoreCase)) {
+                return next;
+            }
+        }
     }
 
     private List<String> splitText(String text, int size) {
@@ -196,8 +225,6 @@ public class DocumentServiceImpl implements IDocumentService {
             throw new BusinessException("Bạn không có quyền xóa tài liệu của người khác", "403001");
         }
 
-        // Dọn join-table quiz_source_documents trước khi xoá document, vì Hibernate ManyToMany không
-        // tự cascade từ phía Document — không xoá rows ở đây sẽ gây FK violation trên MySQL.
         quizRepository.deleteSourceDocumentLinksForDocument(doc.getId());
 
         documentRepository.delete(doc);

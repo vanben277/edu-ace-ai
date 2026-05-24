@@ -8,6 +8,7 @@ import com.example.eduaceai.entity.User;
 import com.example.eduaceai.exception.BusinessException;
 import com.example.eduaceai.exception.ErrorCodeConstant;
 import com.example.eduaceai.exception.NotFoundException;
+import com.example.eduaceai.repository.ConversationRepository;
 import com.example.eduaceai.repository.DocumentRepository;
 import com.example.eduaceai.repository.SubjectRepository;
 import com.example.eduaceai.repository.UserRepository;
@@ -26,6 +27,7 @@ public class SubjectServiceImpl implements ISubjectService {
     private final SubjectRepository subjectRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
+    private final ConversationRepository conversationRepository;
 
     @Override
     @Transactional
@@ -104,6 +106,8 @@ public class SubjectServiceImpl implements ISubjectService {
         if (!docs.isEmpty()) {
             documentRepository.saveAll(docs);
         }
+
+        conversationRepository.detachFromSubject(subject.getId());
 
         subjectRepository.delete(subject);
     }

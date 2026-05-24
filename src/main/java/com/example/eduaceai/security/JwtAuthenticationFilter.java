@@ -15,13 +15,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-/**
- * JWT filter — nếu header có Bearer token mà token không hợp lệ/hết hạn → short-circuit 401.
- *
- * <p>Trước đây filter silently skip khi token invalid → request đi qua anonymous → Spring default
- * entry point trả 403. Sai semantic RFC 6750 + vi phạm consensus toàn cầu "JWT expired → 401".
- * Frontend handle 401 = auto clear + redirect login; 403 = chỉ toast (user bị stuck).
- */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -43,7 +36,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
             if (!jwtUtils.validateToken(token)) {
-                // Token hết hạn hoặc invalid → short-circuit 401 ngay, không đi qua filter chain tiếp
                 writeUnauthorized(response);
                 return;
             }

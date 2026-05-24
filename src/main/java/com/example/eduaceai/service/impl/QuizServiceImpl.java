@@ -182,7 +182,6 @@ public class QuizServiceImpl implements IQuizService {
 
         QuizResult savedResult = quizResultRepository.save(result);
 
-        // Sinh lộ trình ngay trong flow submit: UX 1-click, không cần gọi API thứ 2
         LearningRoadmapResponse roadmap = generateAndPersistRoadmap(savedResult);
         String servedBy = resilientChatModel.getActiveTier();
 
@@ -203,7 +202,6 @@ public class QuizServiceImpl implements IQuizService {
             throw new BusinessException("Bạn không có quyền xem kết quả này", "403001");
         }
 
-        // Đọc lại roadmap đã lưu (nếu có)
         LearningRoadmapResponse roadmap = null;
         String servedBy = null;
         var saved = learningRoadmapRepository.findByQuizResultId(resultId);
@@ -284,12 +282,6 @@ public class QuizServiceImpl implements IQuizService {
                 .toList();
     }
 
-    /**
-     * Validate + normalize 1 câu hỏi AI sinh ra.
-     * Trả về null nếu câu không thể sửa được (thiếu trường quan trọng).
-     * - correctAnswer: ép về 1 ký tự A/B/C/D viết hoa. Nếu AI trả full text → match với optionA-D để suy ra.
-     * - content/options/explanation: bắt buộc có, nếu thiếu → reject.
-     */
     private QuestionAiResponse normalizeQuestion(QuestionAiResponse q) {
         if (q == null) return null;
         if (isBlank(q.getContent()) || isBlank(q.getOptionA()) || isBlank(q.getOptionB())
@@ -301,16 +293,13 @@ public class QuizServiceImpl implements IQuizService {
         String raw = q.getCorrectAnswer() == null ? "" : q.getCorrectAnswer().trim();
         String letter = null;
 
-        // Case 1: đã là ký tự đơn A/B/C/D (hoa hoặc thường)
         if (raw.length() == 1 && "ABCDabcd".indexOf(raw.charAt(0)) >= 0) {
             letter = raw.toUpperCase();
         }
-        // Case 2: dạng "A)" "A." "A:" — lấy ký tự đầu
         else if (raw.length() >= 2 && "ABCDabcd".indexOf(raw.charAt(0)) >= 0
                 && "):. -".indexOf(raw.charAt(1)) >= 0) {
             letter = String.valueOf(Character.toUpperCase(raw.charAt(0)));
         }
-        // Case 3: AI trả full text đáp án → match với optionA-D
         else {
             String normalizedRaw = raw.toLowerCase();
             if (normalizedRaw.equals(q.getOptionA().trim().toLowerCase())) letter = "A";
@@ -336,10 +325,6 @@ public class QuizServiceImpl implements IQuizService {
         return s == null || s.trim().isEmpty();
     }
 
-    /**
-     * Sinh roadmap dựa trên câu sai thực sự + lưu DB. Nếu AI (kể cả 3 tier) chết →
-     * fallback static để UX không bao giờ thấy lỗi.
-     */
     private LearningRoadmapResponse generateAndPersistRoadmap(QuizResult result) {
         List<UserAnswer> wrongs = result.getUserAnswers().stream()
                 .filter(ua -> !ua.isCorrect())
@@ -374,7 +359,6 @@ public class QuizServiceImpl implements IQuizService {
                         result.getTotalQuestions(),
                         wrongsText
                 );
-                // Sanitize: chỉ accept tier name trong whitelist, tránh leak giá trị lạ (failed/none)
                 String rawTier = resilientChatModel.getActiveTier();
                 tierServed = resilientChatModel.isKnownTier(rawTier) ? rawTier : "static-fallback";
             } catch (Exception e) {

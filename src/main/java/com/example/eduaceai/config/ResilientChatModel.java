@@ -8,15 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
-/**
- * Chain-of-responsibility wrapper: thử từng ChatLanguageModel theo thứ tự.
- *
- * <p>Tier "hiện tại phục vụ" được expose qua getActiveTier() để caller đọc sau khi
- * generate() thành công — dùng {@link ThreadLocal} để tránh race condition giữa các request
- * đồng thời (trước đây dùng AtomicReference bị sai khi nhiều thread share cùng 1 instance).
- *
- * <p>Implement ChatLanguageModel để AiServices.create() inject trong suốt.
- */
 @Slf4j
 public class ResilientChatModel implements ChatLanguageModel {
 
@@ -24,7 +15,6 @@ public class ResilientChatModel implements ChatLanguageModel {
     private static final String TIER_FAILED = "failed";
 
     private final List<TieredModel> tiers;
-    // Per-thread state — mỗi request web có 1 thread riêng nên không leak state sang request khác
     private final ThreadLocal<String> lastActiveTier = ThreadLocal.withInitial(() -> TIER_NONE);
 
     public ResilientChatModel(List<TieredModel> tiers) {
@@ -36,7 +26,6 @@ public class ResilientChatModel implements ChatLanguageModel {
 
     @Override
     public Response<AiMessage> generate(List<ChatMessage> messages) {
-        // Reset state đầu mỗi call — tránh leak từ call trước của cùng thread
         lastActiveTier.set(TIER_NONE);
 
         RuntimeException lastError = null;
@@ -63,18 +52,10 @@ public class ResilientChatModel implements ChatLanguageModel {
         return generate(List.of(messages));
     }
 
-    /**
-     * Trả về tên tier đã phục vụ call gần nhất trên THREAD HIỆN TẠI.
-     * Dùng ngay sau khi generate() return trong cùng thread.
-     */
     public String getActiveTier() {
         return lastActiveTier.get();
     }
 
-    /**
-     * Kiểm tra tier name có phải là một trong các tier configured hay không.
-     * Dùng để sanitize trước khi expose ra response.
-     */
     public boolean isKnownTier(String name) {
         if (name == null) return false;
         return tiers.stream().anyMatch(t -> t.name().equals(name));

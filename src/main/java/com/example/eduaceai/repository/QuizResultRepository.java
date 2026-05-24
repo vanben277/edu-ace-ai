@@ -8,5 +8,4 @@ import java.util.List;
 public interface QuizResultRepository extends JpaRepository<QuizResult, Long> {
     List<QuizResult> findByUserStudentCode(String studentCode);
 
-    long countByUserStudentCode(String studentCode);
 }

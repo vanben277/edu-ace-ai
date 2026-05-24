@@ -17,5 +17,4 @@ public interface SubjectRepository extends JpaRepository<Subject, Long> {
 
     Optional<Subject> findByIdAndUserStudentCode(Long id, String studentCode);
 
-    long countByUserStudentCode(String studentCode);
 }

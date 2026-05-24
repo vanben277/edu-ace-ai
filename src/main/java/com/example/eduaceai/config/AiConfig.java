@@ -18,11 +18,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 3-tier fallback (verified ngày 13/4/2026 với prompt structured tiếng Việt):
- *   Tier 1: Groq llama-3.3-70b   (LPU, ~1.6s, ổn định nhất hiện tại)
- *   Tier 2: Gemini 2.5 Flash     (chất lượng cao, hay 503 trên free tier)
- *   Tier 3: Gemini 2.5 Flash Lite (luôn sống, ~3s)
- * Timeout ngắn (8-12s) để auto-failover nhanh trên sân khấu demo.
+ * 3-tier fallback với prompt structured):
+ *   Tier 1: Groq llama-3.3-70b
+ *   Tier 2: Gemini 2.5 Flash
+ *   Tier 3: Gemini 2.5 Flash Lite
  */
 @Configuration
 public class AiConfig {
@@ -84,11 +83,9 @@ public class AiConfig {
             ChatLanguageModel geminiSecondary,
             ChatLanguageModel groqTertiary) {
         List<ResilientChatModel.TieredModel> tiers = new ArrayList<>();
-        // Tier 1: Groq nếu có key (LPU 1.6s, ổn định nhất theo benchmark thực tế)
         if (groqApiKey != null && !groqApiKey.isBlank()) {
             tiers.add(new ResilientChatModel.TieredModel(groqModel, groqTertiary));
         }
-        // Tier 2 & 3: Gemini làm fallback
         tiers.add(new ResilientChatModel.TieredModel(geminiPrimaryModel, geminiPrimary));
         tiers.add(new ResilientChatModel.TieredModel(geminiSecondaryModel, geminiSecondary));
         return new ResilientChatModel(tiers);

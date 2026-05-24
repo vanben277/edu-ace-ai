@@ -33,14 +33,14 @@ public interface QuizAiService {
               ]
             }
 
-            ⚠️ QUAN TRỌNG VỀ TRƯỜNG 'correctAnswer':
+            QUAN TRỌNG VỀ TRƯỜNG 'correctAnswer':
             - PHẢI là MỘT ký tự viết HOA: "A", "B", "C", hoặc "D"
             - TUYỆT ĐỐI KHÔNG dùng: văn bản đầy đủ đáp án, ký tự thường, số, dấu ngoặc, chấm
             - Ví dụ ĐÚNG: "correctAnswer": "B"
-            - Ví dụ SAI: "correctAnswer": "Tính kế thừa"  ❌
-            - Ví dụ SAI: "correctAnswer": "b"  ❌
-            - Ví dụ SAI: "correctAnswer": "B)"  ❌
-            - Ví dụ SAI: "correctAnswer": 2  ❌
+            - Ví dụ SAI: "correctAnswer": "Tính kế thừa"
+            - Ví dụ SAI: "correctAnswer": "b"
+            - Ví dụ SAI: "correctAnswer": "B)"
+            - Ví dụ SAI: "correctAnswer": 2
 
             ============================================================
             VÍ DỤ HOÀN CHỈNH (few-shot):

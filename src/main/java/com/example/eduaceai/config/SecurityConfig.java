@@ -45,7 +45,8 @@ public class SecurityConfig {
                                 "/api/ai/**",
                                 "/api/documents/**",
                                 "/api/quizzes/**",
-                                "/api/subjects/**"
+                                "/api/subjects/**",
+                                "/api/conversations/**"
                         ).authenticated()
                         .anyRequest().authenticated()
                 )

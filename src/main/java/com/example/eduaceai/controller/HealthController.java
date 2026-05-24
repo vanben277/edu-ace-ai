@@ -21,9 +21,6 @@ public class HealthController {
         return "ALIVE";
     }
 
-    /**
-     * Pre-warm + introspection endpoint. Trước demo bấm 1 phát biết tier nào đang phục vụ.
-     */
     @GetMapping("/ai-health")
     public Map<String, Object> aiHealth() {
         Map<String, Object> payload = new LinkedHashMap<>();
